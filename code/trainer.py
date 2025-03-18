@@ -118,11 +118,13 @@ class Trainer:
 
     def load_embeddings_and_ci(self, data, dataset_type):
         """Loads pre-computed embeddings and CI values, handling potential errors."""
-        import json  # Moved import inside the function
+        import json
 
         for i in range(len(data['stock'])):
             stock = data['stock'][i]
             day_index = data['day'][i]
+            with print_lock:
+                print(f"--- Processing sample {i}: stock={stock}, day_index={day_index}")
 
             # Convert index to date string using the correct DataFrame
             if dataset_type == 'train':
@@ -134,62 +136,94 @@ class Trainer:
             else:
                 raise ValueError(f"Invalid dataset_type: {dataset_type}")
 
-            date = str(df.iloc[day_index].name)  # Get the date string
+            date = str(df.index[day_index])  # Corrected date retrieval
+            with print_lock:
+                print(f"  Looking up date: {date}, type={type(date)}")
 
             for feature in config['data']['features']:
                 embedding_file = os.path.join(config['paths']['struc2vec_dir'], dataset_type, feature, f"{stock}.json")
                 ci_file = os.path.join(config['paths']['ci_dir'], dataset_type, feature, f"{stock}.json")
 
-                # Load embeddings, handling potential errors
-                try:
+                with print_lock:
+                    print(f"    Loading embedding from: {embedding_file}")
+                if os.path.exists(embedding_file):
                     with open(embedding_file, 'r') as f:
-                        embeddings = json.load(f)
-                    if date in embeddings:
-                         data[f'{feature}_ems'] = np.array([embeddings[date][str(j)] for j in range(self.time_step)])
-                    else:
-                        data[f'{feature}_ems'] = None
-                except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+                        try:
+                            embeddings = json.load(f)
+                            with print_lock:
+                                print(f"      Embeddings loaded. Keys (first 5): {list(embeddings.keys())[:5]} ...")
+                            if date in embeddings:
+                                data[f'{feature}_ems'] = np.array([embeddings[date][str(j)] for j in range(self.time_step)])
+                            else:
+                                with print_lock:
+                                    print(f"      WARNING: Date {date} not found in embeddings for {stock}, {feature}, {dataset_type}.")
+                                data[f'{feature}_ems'] = None
+                        except json.JSONDecodeError as e:  # Handle JSON decoding errors
+                            with print_lock:
+                                print(f"      ERROR: Could not decode JSON from {embedding_file}. Error: {e}")
+                            data[f'{feature}_ems'] = None
+                        except Exception as e: # Catch any other exceptions.
+                            with print_lock:
+                                print(f"      ERROR: Unexpected error loading {embedding_file}. Error: {e}")
+                            data[f'{feature}_ems'] = None
+                else:
                     with print_lock:
-                        print(f"WARNING: Could not load embeddings for {stock}, {feature}, {date}: {e}")
+                        print(f"      WARNING: Embedding file not found: {embedding_file}")
                     data[f'{feature}_ems'] = None
 
-                # Load CI values, handling potential errors
-                try:
-                    with open(ci_file, 'r') as f:
-                        ci_data = json.load(f)
-                    if date in ci_data:
-                        ci_values = [float(ci_data[date][str(k)]) for k in sorted(ci_data[date].keys(), key=int)]
-                        data[f'{feature}_cis'] = np.array(ci_values)
-                    else:
-                        data[f'{feature}_cis'] = None
-                except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
-                    with print_lock:
-                        print(f"WARNING: Could not load CI data for {stock}, {feature}, {date}: {e}")
-                    data[f'{feature}_cis'] = None
+                with print_lock:
+                    print(f"    Loading CI from: {ci_file}")
 
+                if os.path.exists(ci_file):
+                    with open(ci_file, 'r') as f:
+                        try:
+                            ci_data = json.load(f)
+                            with print_lock:
+                                print(f"      CI data loaded. Keys (first 5): {list(ci_data.keys())[:5]} ...")
+                            if date in ci_data:
+                                ci_values = [float(ci_data[date][str(k)]) for k in sorted(ci_data[date].keys(), key=int)]
+                                data[f'{feature}_cis'] = np.array(ci_values)
+
+                            else:
+                                with print_lock:
+                                  print(f"      WARNING: Date {date} not found in CI data for {stock}, {feature}, {dataset_type}.")
+                                data[f'{feature}_cis'] = None
+                        except json.JSONDecodeError as e:
+                            with print_lock:
+                                print(f"      ERROR: Could not decode JSON from {ci_file}. Error: {e}")
+                            data[f'{feature}_cis'] = None
+                        except Exception as e:
+                            with print_lock:
+                                print(f"    ERROR: Unexpected error loading {ci_file}. Error: {e}")
+                            data[f'{feature}_cis'] = None
+                else:
+                    with print_lock:
+                        print(f"      WARNING: CI file not found: {ci_file}")
+                    data[f'{feature}_cis'] = None
         return data
 
     def get_batch(self, data, start_index, batch_size):
+
       end_index = min(start_index + batch_size, len(data['stock']))
       batch = {}
       for key in data.keys():
         if isinstance(data[key], np.ndarray):
             if key.endswith('_ys'):
-              # The time series data is already a list of numpy arrays.
               batch[key] = [data[key][i] for i in range(start_index, end_index)]
             else:
-              batch[key] = data[key][start_index:end_index] #already an array
+              batch[key] = data[key][start_index:end_index]
         else:
-          batch[key] = data[key] # For placeholders like _ems and _cis
+          batch[key] = data[key]
       return batch
 
     def to_variable(self, data):
         var = []
         for i in range(self.num_features):
             feature_name = config['data']['features'][i]
+            # CRITICAL: unsqueeze ys to (batch_size, time_step, 1)
             var_dict = {
                 'ems': None,  # Placeholder
-                'ys': torch.tensor(data[f'{feature_name}_ys'], dtype=torch.float32).unsqueeze(-1).to(self.device),
+                'ys': torch.tensor(data[f'{feature_name}_ys'], dtype=torch.float32).unsqueeze(-1).to(self.device),  # Unsqueeze
                 'cis': None  # Placeholder
             }
             # Correctly handle potential None values for embeddings and CI
@@ -284,19 +318,21 @@ class Trainer:
         all_predictions = []
         all_targets = []
 
-        with torch.no_grad():  # Disable gradient calculation
+        with torch.no_grad():  # Disable gradient calculation during evaluation
             for batch_idx in range(0, len(data['stock']), self.batch_size):
                 batch_data = self.get_batch(data, batch_idx, self.batch_size)
 
                 var = self.to_variable(batch_data)
                 emtree_out = self.emtree(var)
                 logits = self.output(emtree_out)
+
+                # Shift targets to 0, 1, 2 for CrossEntropyLoss
                 targets = torch.tensor(batch_data['target'] + 1, dtype=torch.long).to(self.device)
 
                 loss = self.loss_func(logits, targets)
                 total_loss += loss.item() * len(batch_data['stock'])
 
-                # Get predictions (argmax of logits and shift back)
+                # Get predictions (argmax of logits), shift back to -1, 0, 1
                 batch_predictions = torch.argmax(logits, dim=1) - 1
                 all_predictions.extend(batch_predictions.cpu().numpy())
                 all_targets.extend(batch_data['target'])
@@ -310,11 +346,12 @@ class Trainer:
         if not self.config['testing']['model_path']:
             raise ValueError("Must specify a model path in config.yaml for testing.")
         with print_lock:
-          print(f"Loading model from: {self.config['testing']['model_path']}")
+            print(f"Loading model from: {self.config['testing']['model_path']}")
+
         checkpoint = torch.load(self.config['testing']['model_path'], map_location=self.device)
         self.emtree.load_state_dict(checkpoint['emtree_state_dict'])
         self.output.load_state_dict(checkpoint['output_state_dict'])
-        self.emtree.eval()
+        self.emtree.eval()  # Set to evaluation mode
         self.output.eval()
         with print_lock:
           print("Model loaded.")
@@ -323,7 +360,6 @@ class Trainer:
         test_loss, test_predictions, test_targets = self.evaluate(self.test_data)
         with print_lock:
           print("Evaluation complete.")
-
 
         test_accuracy = accuracy_score(test_targets, test_predictions)
         test_precision = precision_score(test_targets, test_predictions, average='weighted', zero_division=0)
@@ -336,7 +372,7 @@ class Trainer:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train/Test the PriceGraph model')
-    parser.add_argument('--test', action='store_true', help='Run in test mode') # Add test argument.
+    parser.add_argument('--test', action='store_true', help='Run in test mode')
     args = parser.parse_args()
 
     trainer = Trainer(config, args)  # Pass args to the Trainer
