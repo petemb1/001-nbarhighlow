@@ -1,0 +1,11 @@
+numpy>=1.19.5,<1.27
+scipy>=0.14,<1.8
+matplotlib>=1.4,<3.6
+future
+networkx==2.1
+gensim==3.4.0
+scikit_learn==0.19.1
+torch
+pandas
+yfinance
+pyyaml
