@@ -1,11 +1,17 @@
 #!/usr/bin/env python
 # encoding: utf-8
+import math
 import torch
 from torch import nn
-from torch.nn import init
 import torch.nn.functional as F
-import numpy as np
+#from torch.autograd import Variable  # No longer needed
+import yaml
 import os
+
+# Load configuration
+with open('config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+
 
 class GraphConvolution(nn.Module):
 
@@ -22,9 +28,9 @@ class GraphConvolution(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        init.kaiming_uniform_(self.weight)
+        nn.init.kaiming_uniform_(self.weight)
         if self.use_bias:
-            init.zeros_(self.bias)
+            nn.init.zeros_(self.bias)
 
     def forward(self, adjacency, input_feature):
         support = torch.mm(input_feature, self.weight)
@@ -39,32 +45,34 @@ class GraphConvolution(nn.Module):
 class SelfAttention(nn.Module):
     def __init__(self, input_size, hidden_size):
         super(SelfAttention, self).__init__()
-        self.query = nn.Linear(input_size, hidden_size)
-        self.key = nn.Linear(input_size, hidden_size)
-        self.value = nn.Linear(input_size, hidden_size)
-        self.scale = torch.sqrt(torch.tensor(hidden_size, dtype=torch.float32))  # Use float32 for consistency
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  # Explicitly set device
-        self.scale = self.scale.to(self.device) #Put this to the device
+        self.last_hidden_size = input_size
+        self.hidden_size = hidden_size
 
-    def forward(self, x):
-        # Move input to the device
-        x = x.to(self.device)
+        self.wq = nn.Linear(in_features=input_size, out_features=hidden_size, bias=False)
+        self.wk = nn.Linear(in_features=input_size, out_features=hidden_size, bias=False)
+        self.wv = nn.Linear(in_features=input_size, out_features=hidden_size, bias=False)
+        self.scale = torch.sqrt(torch.tensor(hidden_size, dtype=torch.float32))
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.scale = self.scale.to(self.device) # Put this to the device.
 
-        Q = self.query(x)
-        K = self.key(x)
-        V = self.value(x)
+    def forward(self, h):
 
-        # Move Q, K, V to the device
+        #Move input to device
+        h = h.to(self.device)
+
+        Q = self.wq(h)
+        K = self.wk(h)
+        V = self.wv(h)
+
         Q, K, V = Q.to(self.device), K.to(self.device), V.to(self.device)
 
         attention_weights = torch.matmul(Q, K.transpose(-2, -1)) / self.scale
         attention_weights = F.softmax(attention_weights, dim=-1)
-
-        # Move attention_weights to device
-        attention_weights = attention_weights.to(self.device)
+        attention_weights = attention_weights.to(self.device) #Move to device
 
         attended_values = torch.matmul(attention_weights, V)
         return attended_values
+
 
 class Layer1(nn.Module):
     def __init__(self, input_size, hidden_size, device):  # Add device parameter
@@ -97,14 +105,29 @@ class Layer2(nn.Module):
 class DAS(nn.Module):
     def __init__(self, feature_size, hidden_size, time_step, drop_ratio, device):
         super(DAS, self).__init__()
-        self.layer1 = Layer1(feature_size, hidden_size, device)  # Pass device
-        self.layer2 = Layer2(time_step, hidden_size, device)     # Pass device
+        # Correctly calculate input_size based on whether embeddings are used.
+        input_size = 1 + 1  # Always include ys and cis
+        if config['model'].get('embedding_size') is not None:  # Check if embeddings are enabled
+            input_size += config['model']['embedding_dim']  # Add embedding dimension
+        self.layer1 = Layer1(input_size, hidden_size, device)  # Pass correct input_size
+        self.layer2 = Layer2(time_step, hidden_size, device)
         self.drop = nn.Dropout(drop_ratio)
         self.device = device
 
     def forward(self, ems, var_y, cis):
-        var_x = torch.cat((ems, var_y, cis.unsqueeze(-1)), dim=2)
-        var_x = var_x.to(self.device) # Move to the device
+        # Ensure ems, var_y, cis have correct shapes.
+        if ems is not None:
+            ems = ems.to(self.device)
+        var_y = var_y.to(self.device)
+        cis = cis.to(self.device)
+
+        if ems is not None:
+          var_x = torch.cat((ems, var_y, cis.unsqueeze(-1)), dim=2)
+        else:
+          var_x = torch.cat((var_y, cis.unsqueeze(-1)), dim=2)
+        #print(f"var_x shape: {var_x.shape}") # Debugging print statement
+
+        var_x = var_x.to(self.device)
         out1 = self.layer1(var_x)
         out1 = out1.transpose(-1,-2)
         out2 = self.layer2(out1)
@@ -132,6 +155,8 @@ class output_layer(nn.Module):
     def __init__(self, last_hidden_size, output_size):
         super(output_layer, self).__init__()
         self.out_layer = nn.Linear(last_hidden_size, output_size)
+        # self.sigmoid = nn.Sigmoid()  # REMOVED Sigmoid
+
     def forward(self, x):
         out = self.out_layer(x)
         return out
