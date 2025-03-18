@@ -17,6 +17,7 @@ import yaml
 from dataset import load_dataframe, sample_by_dates  # Import load_dataframe
 import json  # Import json
 from multiprocessing import Lock
+import torch.nn.functional as F
 
 # Set random seeds for reproducibility
 torch.manual_seed(0)
@@ -234,35 +235,30 @@ class Trainer:
         best_val_loss = float('inf')
 
         for epoch in range(self.epochs):
-            self.emtree.train()  # Set the model to training mode
+            self.emtree.train()
             self.output.train()
             train_loss = 0.0
             train_predictions = []
             train_targets = []
 
-            # Batch the training data
             for batch_idx in range(0, len(self.train_data['stock']), self.batch_size):
                 with print_lock:
-                    print(f"Epoch {epoch+1}/{self.epochs}, Batch {batch_idx+1}/{len(self.train_data['stock']) // self.batch_size + 1}")  # Batch progress
+                    print(f"Epoch {epoch+1}/{self.epochs}, Batch {batch_idx+1}/{len(self.train_data['stock']) // self.batch_size + 1}")
 
                 batch_data = self.get_batch(self.train_data, batch_idx, self.batch_size)
 
                 self.emtree_optim.zero_grad()
                 self.output_optim.zero_grad()
-
-                # Prepare input data
                 var = self.to_variable(batch_data)
-
-                # Forward pass
                 emtree_out = self.emtree(var)
                 logits = self.output(emtree_out)
 
                 # --- CORRECTED TARGET HANDLING ---
-                targets = batch_data['target'] + 1  # Shift to 0, 1, 2
-                targets = torch.tensor(targets, dtype=torch.long).to(self.device) #Corrected
+                targets = torch.tensor(batch_data['target'] + 1, dtype=torch.long).to(self.device)  # Shift and convert
+                targets = F.one_hot(targets, num_classes=3).float()  # One-hot encode
+                # -----------------------------------
 
-
-                loss = self.loss_func(logits, targets)  # Pass logits directly
+                loss = self.loss_func(logits, targets)
                 loss.backward()
 
                 self.emtree_optim.step()
@@ -309,32 +305,31 @@ class Trainer:
 
 
     def evaluate(self, data):
-        self.emtree.eval()  # Set the model to evaluation mode
+        self.emtree.eval()
         self.output.eval()
         total_loss = 0.0
         all_predictions = []
         all_targets = []
 
-        with torch.no_grad():  # Disable gradient calculation during evaluation
+        with torch.no_grad():
             for batch_idx in range(0, len(data['stock']), self.batch_size):
                 batch_data = self.get_batch(data, batch_idx, self.batch_size)
-
                 var = self.to_variable(batch_data)
                 emtree_out = self.emtree(var)
                 logits = self.output(emtree_out)
 
                 # --- CORRECTED TARGET HANDLING ---
-                targets = batch_data['target'] + 1  # Shift to 0, 1, 2
-                targets = torch.tensor(targets, dtype=torch.long).to(self.device) #Corrected
+                targets = torch.tensor(batch_data['target'] + 1, dtype=torch.long).to(self.device) # Shift
+                targets = F.one_hot(targets, num_classes=3).float() # One-hot encode
+                # ------------------------------------
 
                 loss = self.loss_func(logits, targets)
                 total_loss += loss.item() * len(batch_data['stock'])
 
-                # Get predictions (argmax of logits), shift back to -1, 0, 1
-                batch_predictions = torch.argmax(logits, dim=1) - 1
+                # --- PREDICTION HANDLING (Corrected) ---
+                batch_predictions = torch.argmax(logits, dim=1) - 1 #Correct
                 all_predictions.extend(batch_predictions.cpu().numpy())
-                all_targets.extend(batch_data['target'])
-
+                all_targets.extend(batch_data['target']) #append the original target
         total_loss /= len(data['stock'])
         return total_loss, all_predictions, all_targets
 
@@ -345,25 +340,23 @@ class Trainer:
             raise ValueError("Must specify a model path in config.yaml for testing.")
         with print_lock:
             print(f"Loading model from: {self.config['testing']['model_path']}")
-
         checkpoint = torch.load(self.config['testing']['model_path'], map_location=self.device)
         self.emtree.load_state_dict(checkpoint['emtree_state_dict'])
         self.output.load_state_dict(checkpoint['output_state_dict'])
         self.emtree.eval()  # Set to evaluation mode
         self.output.eval()
         with print_lock:
-          print("Model loaded.")
+            print("Model loaded.")
         with print_lock:
             print("Evaluating on test data...")
         test_loss, test_predictions, test_targets = self.evaluate(self.test_data)
         with print_lock:
-          print("Evaluation complete.")
+            print("Evaluation complete.")
 
         test_accuracy = accuracy_score(test_targets, test_predictions)
         test_precision = precision_score(test_targets, test_predictions, average='weighted', zero_division=0)
         test_recall = recall_score(test_targets, test_predictions, average='weighted', zero_division=0)
         test_f1 = f1_score(test_targets, test_predictions, average='weighted', zero_division=0)
-
         with print_lock:
             print("\n--- Test Results ---")
             print(f"Test Loss: {test_loss:.4f}")
