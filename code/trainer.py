@@ -62,8 +62,7 @@ class Trainer:
         if self.train_df is None or self.validation_df is None or (args and args.test and self.test_df is None):
             raise ValueError("Failed to load one or more dataframes.")
 
-        # Create datasets by sampling.  This now happens *inside* the trainer,
-        # *after* loading the raw data, and *before* training.
+        # Create datasets by sampling.
         with print_lock:
             print("Sampling data...")
         self.train_data = sample_by_dates(self.train_df, self.time_step)
@@ -120,7 +119,11 @@ class Trainer:
         """Loads pre-computed embeddings and CI values, handling potential errors."""
         import json
 
-        # Pre-allocate lists to hold embeddings/CI (avoids appending in loop)
+        # Dictionaries to cache loaded data: (stock, feature) -> data
+        loaded_embeddings = {}
+        loaded_ci = {}
+
+        # Pre-allocate lists with None.  Correct length, and correct type.
         for feature in config['data']['features']:
             data[f'{feature}_ems'] = [None] * len(data['stock'])
             data[f'{feature}_cis'] = [None] * len(data['stock'])
@@ -149,86 +152,83 @@ class Trainer:
                 embedding_file = os.path.join(config['paths']['struc2vec_dir'], dataset_type, feature, f"{stock}.json")
                 ci_file = os.path.join(config['paths']['ci_dir'], dataset_type, feature, f"{stock}.json")
 
-                # Load embedding
-                if os.path.exists(embedding_file):
-                    with open(embedding_file, 'r') as f:
+                # --- Load Embedding (if not already loaded) ---
+                if (stock, feature) not in loaded_embeddings:  # Check the cache FIRST
+                    if os.path.exists(embedding_file):
                         try:
-                            embeddings = json.load(f)
-                            # Get the embedding for the specific date
-                            if date in embeddings:
-                                # Correctly access and assign the embedding *array*.
-                                data[f'{feature}_ems'][i] = np.array([embeddings[date][str(j)] for j in range(self.time_step)])
-                            #else: # No longer necessary with pre-allocation
-                            #   data[f'{feature}_ems'] = None
-                        except (json.JSONDecodeError, KeyError) as e:
-                            with print_lock:
-                                print(f"ERROR: Could not decode or access JSON data in {embedding_file}. Error: {e}")
-                            data[f'{feature}_ems'][i] = None  #Assign to correct index
-                        except Exception as e:
-                            with print_lock:
-                                print(f"      ERROR: Unexpected error loading {embedding_file}. Error: {e}")
-                            data[f'{feature}_ems'][i] = None
-                else:
-                    #print(f"WARNING: Embedding file not found: {embedding_file}") #Debug removed
-                    data[f'{feature}_ems'][i] = None
+                            with open(embedding_file, 'r') as f:
+                                loaded_embeddings[(stock, feature)] = json.load(f)  # Load *entire* file
+                        except (FileNotFoundError, json.JSONDecodeError) as e:
+                            print(f"WARNING: Error loading {embedding_file}: {e}. Skipping.")
+                            loaded_embeddings[(stock, feature)] = {}  # Set to empty dict on error
+                    else:
+                        print(f"WARNING: Embedding file not found: {embedding_file}")
+                        loaded_embeddings[(stock, feature)] = {}  # Not found = empty dict
 
-                # Load CI values
-                if os.path.exists(ci_file):
-                    with open(ci_file, 'r') as f:
+                # --- Embedding Lookup (from cached data) ---
+                if date in loaded_embeddings.get((stock, feature), {}):  # Use get with default
+                    embeddings_for_date = loaded_embeddings[(stock, feature)][date]
+                    # Convert keys to integers for sorting, then create a list of embeddings
+                    embedding_list = [embeddings_for_date[str(j)] for j in range(self.time_step)]
+                    data[f'{feature}_ems'][i] = np.array(embedding_list, dtype=np.float32) # Assign to correct index
+
+
+                # --- Load CI (if not already loaded) ---
+                if (stock, feature) not in loaded_ci:  # Check cache FIRST
+                    if os.path.exists(ci_file):
                         try:
-                            ci_data = json.load(f)
-                            if date in ci_data:
-                                # Access CI data using string keys, convert to float.
-                                ci_values = [float(ci_data[date][key]) for key in sorted(ci_data[date].keys(), key=int)]
-                                data[f'{feature}_cis'][i] = np.array(ci_values)
-                            #else: # No longer required with pre allocation
-                            #   data[f'{feature}_cis'] = None
-                        except (json.JSONDecodeError, KeyError) as e:
-                            with print_lock:
-                                print(f"ERROR: Could not decode or access JSON data in {ci_file}. Error: {e}")
-                            data[f'{feature}_cis'][i] = None
-                        except Exception as e:
-                            with print_lock:
-                                print(f"    ERROR: Unexpected error loading {ci_file}. Error: {e}")
-                else:
-                    #print(f"WARNING: CI file not found: {ci_file}") #Debug removed
-                    data[f'{feature}_cis'][i] = None # Assign to the correct index
+                            with open(ci_file, 'r') as f:
+                                loaded_ci[(stock, feature)] = json.load(f)  # Load *entire* file
+                        except (FileNotFoundError, json.JSONDecodeError) as e:
+                            print(f"WARNING: Error loading {ci_file}: {e}. Skipping.")
+                            loaded_ci[(stock, feature)] = {}  # Set to empty dict
+                    else:
+                        print(f"WARNING: CI file not found: {ci_file}")
+                        loaded_ci[(stock, feature)] = {}  # Not found = empty dict
+
+                # --- CI Lookup (from cached data) ---
+                if date in loaded_ci.get((stock, feature), {}):  # Use get with default
+                    ci_data_for_date = loaded_ci[(stock, feature)][date]
+                    # Convert keys to integers for sorting, then create a list of CI values
+                    ci_values = [float(ci_data_for_date[key]) for key in sorted(ci_data_for_date.keys(), key=int)]
+                    data[f'{feature}_cis'][i] = np.array(ci_values, dtype=np.float32) # Assign to correct index.
+
+
         return data
 
     def get_batch(self, data, start_index, batch_size):
-      end_index = min(start_index + batch_size, len(data['stock']))
-      batch = {}
-      for key in data.keys():
-        if isinstance(data[key], np.ndarray):
-            if key.endswith('_ys'):
-              # The time series data is already a 2D NumPy array
-              batch[key] = data[key][start_index:end_index]
+        end_index = min(start_index + batch_size, len(data['stock']))
+        batch = {}
+        for key in data.keys():
+            if isinstance(data[key], np.ndarray):
+                # Correctly handle _ys, _ems, and _cis, and other NumPy arrays
+                batch[key] = data[key][start_index:end_index]
+            elif isinstance(data[key], list):  # Handle lists (for _ems and _cis)
+                batch[key] = data[key][start_index:end_index]
             else:
-              batch[key] = data[key][start_index:end_index] #already an array
-        elif isinstance(data[key], list):  # Handle lists (for _ems and _cis).
-            batch[key] = data[key][start_index:end_index]
-        else:
-          batch[key] = data[key] # For placeholders like _ems and _cis
-      return batch
-
+                batch[key] = data[key]
+        return batch
 
     def to_variable(self, data):
         var = []
         for i in range(self.num_features):
             feature_name = config['data']['features'][i]
+            # CRITICAL: unsqueeze ys to (batch_size, time_step, 1)
             var_dict = {
-                'ems': None,
-                'ys': torch.tensor(data[f'{feature_name}_ys'], dtype=torch.float32).unsqueeze(-1).to(self.device),
-                'cis': None
+                'ems': None,  # Placeholder
+                'ys': torch.tensor(data[f'{feature_name}_ys'], dtype=torch.float32).unsqueeze(-1).to(self.device),  # Unsqueeze
+                'cis': None  # Placeholder
             }
+            # Correctly handle potential None values for embeddings and CI
             if data[f'{feature_name}_ems'] is not None:
-                # Convert list of arrays to a tensor:
+                # Stack the embeddings into a single tensor for the batch:
                 var_dict['ems'] = torch.tensor(np.stack(data[f'{feature_name}_ems']), dtype=torch.float32).to(self.device)
             if data[f'{feature_name}_cis'] is not None:
                 var_dict['cis'] = torch.tensor(np.stack(data[f'{feature_name}_cis']), dtype=torch.float32).to(self.device)
+
             var.append(var_dict)
         return var
-
+    
     def train(self):
         best_val_loss = float('inf')
 
@@ -242,7 +242,7 @@ class Trainer:
             # Batch the training data
             for batch_idx in range(0, len(self.train_data['stock']), self.batch_size):
                 with print_lock:
-                    print(f"Epoch {epoch+1}/{self.epochs}, Batch {batch_idx+1}/{len(self.train_data['stock']) // self.batch_size + 1}")
+                    print(f"Epoch {epoch+1}/{self.epochs}, Batch {batch_idx+1}/{len(self.train_data['stock']) // self.batch_size + 1}")  # Batch progress
 
                 batch_data = self.get_batch(self.train_data, batch_idx, self.batch_size)
 
@@ -256,18 +256,17 @@ class Trainer:
                 emtree_out = self.emtree(var)
                 logits = self.output(emtree_out)
 
-                # --- TARGET HANDLING (Corrected) ---
-                targets = batch_data['target'] + 1  # Shift to 0, 1, 2
-                targets = torch.tensor(targets, dtype=torch.long).to(self.device)
+                # Shift targets to 0, 1, 2 for CrossEntropyLoss
+                targets = batch_data['target'] + 1  # Corrected
+                targets = torch.tensor(targets, dtype=torch.long).to(self.device) # Move to device
 
-
-                loss = self.loss_func(logits, targets)
+                loss = self.loss_func(logits, targets)  # Pass logits directly
                 loss.backward()
 
                 self.emtree_optim.step()
                 self.output_optim.step()
 
-                train_loss += loss.item() * len(batch_data['stock'])  # Weighted average
+                train_loss += loss.item() * len(batch_data['stock'])  # Weighted average loss
 
                 # Get predictions (argmax of logits), shift back to -1, 0, 1
                 batch_predictions = torch.argmax(logits, dim=1) - 1
@@ -289,7 +288,6 @@ class Trainer:
             val_precision = precision_score(val_targets, val_predictions, average='weighted', zero_division=0)
             val_recall = recall_score(val_targets, val_predictions, average='weighted', zero_division=0)
             val_f1 = f1_score(val_targets, val_predictions, average='weighted', zero_division=0)
-
             with print_lock:
                 print(f"Epoch {epoch+1}/{self.epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
                 print(f"Train Acc: {train_accuracy:.4f}, Prec: {train_precision:.4f}, Rec: {train_recall:.4f}, F1: {train_f1:.4f}")
@@ -306,6 +304,7 @@ class Trainer:
                 with print_lock:
                     print(f"Saved best model to {self.model_name}_best.pth")
 
+
     def evaluate(self, data):
         self.emtree.eval()  # Set the model to evaluation mode
         self.output.eval()
@@ -321,10 +320,9 @@ class Trainer:
                 emtree_out = self.emtree(var)
                 logits = self.output(emtree_out)
 
-                # --- TARGET HANDLING (Corrected) ---
-                targets = batch_data['target'] + 1  # Shift to 0, 1, 2
+                # Shift targets to 0, 1, 2 for CrossEntropyLoss
+                targets = batch_data['target'] + 1 #Corrected
                 targets = torch.tensor(targets, dtype=torch.long).to(self.device)
-
 
                 loss = self.loss_func(logits, targets)
                 total_loss += loss.item() * len(batch_data['stock'])
@@ -336,6 +334,7 @@ class Trainer:
 
         total_loss /= len(data['stock'])
         return total_loss, all_predictions, all_targets
+
 
 
     def test(self):
@@ -350,13 +349,12 @@ class Trainer:
         self.emtree.eval()  # Set to evaluation mode
         self.output.eval()
         with print_lock:
-            print("Model loaded.")
-
+          print("Model loaded.")
         with print_lock:
-            print("Evaluating on test data...")
+          print("Evaluating on test data...")
         test_loss, test_predictions, test_targets = self.evaluate(self.test_data)
         with print_lock:
-            print("Evaluation complete.")
+          print("Evaluation complete.")
 
         test_accuracy = accuracy_score(test_targets, test_predictions)
         test_precision = precision_score(test_targets, test_predictions, average='weighted', zero_division=0)
@@ -366,6 +364,7 @@ class Trainer:
             print("\n--- Test Results ---")
             print(f"Test Loss: {test_loss:.4f}")
             print(f"Test Acc: {test_accuracy:.4f}, Prec: {test_precision:.4f}, Rec: {test_recall:.4f}, F1: {test_f1:.4f}")
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train/Test the PriceGraph model')
