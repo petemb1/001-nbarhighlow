@@ -118,10 +118,14 @@ class Trainer:
 
     def load_embeddings_and_ci(self, data, dataset_type):
         """Loads pre-computed embeddings and CI values, handling potential errors."""
-        import json
+        import json  # Import json here
 
-        # Pre-allocate lists to hold embeddings/CI (avoids appending in loop)
-        for feature in config['data']['features']:
+        # Dictionaries to cache loaded data: (stock, feature) -> data
+        loaded_embeddings = {}
+        loaded_ci = {}
+
+        # Pre-allocate lists with None.  Correct length, and correct type.
+        for feature in self.config['data']['features']:
             data[f'{feature}_ems'] = [None] * len(data['stock'])
             data[f'{feature}_cis'] = [None] * len(data['stock'])
 
@@ -142,57 +146,54 @@ class Trainer:
                 raise ValueError(f"Invalid dataset_type: {dataset_type}")
 
             # Convert the integer index back to a string date
-            date = str(original_df.index[day_index])  # Use .index
+            date = str(original_df.index[day_index]) #Correct Date
 
-            for feature in config['data']['features']:
+            for feature in self.config['data']['features']:
                 # Construct paths to embedding and CI files
                 embedding_file = os.path.join(config['paths']['struc2vec_dir'], dataset_type, feature, f"{stock}.json")
                 ci_file = os.path.join(config['paths']['ci_dir'], dataset_type, feature, f"{stock}.json")
 
-                # Load embedding
-                if os.path.exists(embedding_file):
-                    with open(embedding_file, 'r') as f:
+                # --- Load Embedding (if not already loaded) ---
+                if (stock, feature) not in loaded_embeddings:  # Check the cache FIRST
+                    if os.path.exists(embedding_file):
                         try:
-                            embeddings = json.load(f)
-                            # Get the embedding for the specific date
-                            if date in embeddings:
-                                # Correctly access and assign the embedding *array*.
-                                data[f'{feature}_ems'][i] = np.array([embeddings[date][str(j)] for j in range(self.time_step)])
-                            #else: # No longer necessary with pre-allocation
-                            #   data[f'{feature}_ems'] = None
-                        except (json.JSONDecodeError, KeyError) as e:
-                            with print_lock:
-                                print(f"ERROR: Could not decode or access JSON data in {embedding_file}. Error: {e}")
-                            data[f'{feature}_ems'][i] = None #Assign to correct index
-                        except Exception as e:
-                            with print_lock:
-                                print(f"      ERROR: Unexpected error loading {embedding_file}. Error: {e}")
-                            data[f'{feature}_ems'][i] = None
-                else:
-                    #print(f"WARNING: Embedding file not found: {embedding_file}") #Debug removed
-                    data[f'{feature}_ems'][i] = None
+                            with open(embedding_file, 'r') as f:
+                                loaded_embeddings[(stock, feature)] = json.load(f)  # Load *entire* file
+                        except (FileNotFoundError, json.JSONDecodeError) as e:
+                            print(f"WARNING: Error loading {embedding_file}: {e}.  Skipping.")
+                            loaded_embeddings[(stock, feature)] = {}  # Set to empty dict on error
+                    else:
+                        print(f"WARNING: Embedding file not found: {embedding_file}")
+                        loaded_embeddings[(stock, feature)] = {}  # Not found = empty dict
 
-                # Load CI values
-                if os.path.exists(ci_file):
-                    with open(ci_file, 'r') as f:
+                # --- Embedding Lookup (from cached data) ---
+                if date in loaded_embeddings.get((stock, feature), {}):  # Use get with default
+                    embeddings_for_date = loaded_embeddings[(stock, feature)][date]
+                    # Convert keys to integers for sorting, then create a list of embeddings
+                    embedding_list = [embeddings_for_date[str(j)] for j in range(self.time_step)]
+                    data[f'{feature}_ems'][i] = np.array(embedding_list, dtype=np.float32)  # Assign to the correct index
+
+
+                # --- Load CI (if not already loaded) ---
+                if (stock, feature) not in loaded_ci:  # Check cache FIRST
+                    if os.path.exists(ci_file):
                         try:
-                            ci_data = json.load(f)
-                            if date in ci_data:
-                                # Access CI data using string keys, convert to float.
-                                ci_values = [float(ci_data[date][key]) for key in sorted(ci_data[date].keys(), key=int)]
-                                data[f'{feature}_cis'][i] = np.array(ci_values)
-                            #else: # No longer required with pre allocation
-                            #   data[f'{feature}_cis'] = None
-                        except (json.JSONDecodeError, KeyError) as e:
-                            with print_lock:
-                                print(f"ERROR: Could not decode or access JSON data in {ci_file}. Error: {e}")
-                            data[f'{feature}_cis'][i] = None
-                        except Exception as e:
-                            with print_lock:
-                                print(f"    ERROR: Unexpected error loading {ci_file}. Error: {e}")
-                else:
-                    #print(f"WARNING: CI file not found: {ci_file}")
-                    data[f'{feature}_cis'][i] = None #Assign to the correct index.
+                            with open(ci_file, 'r') as f:
+                                loaded_ci[(stock, feature)] = json.load(f)  # Load *entire* file
+                        except (FileNotFoundError, json.JSONDecodeError) as e:
+                            print(f"WARNING: Error loading {ci_file}: {e}.  Skipping.")
+                            loaded_ci[(stock, feature)] = {}  # Set to empty dict
+                    else:
+                        print(f"WARNING: CI file not found: {ci_file}")
+                        loaded_ci[(stock, feature)] = {}  # Not found = empty dict
+
+                # --- CI Lookup (from cached data) ---
+                if date in loaded_ci.get((stock, feature), {}):  # Use get with default
+                    ci_data_for_date = loaded_ci[(stock, feature)][date]
+                     # Convert keys to integers for sorting, then create list of floats
+                    ci_values = [float(ci_data_for_date[key]) for key in sorted(ci_data_for_date.keys(), key=int)]
+                    data[f'{feature}_cis'][i] = np.array(ci_values, dtype=np.float32)  # Assign to correct index
+
 
         return data
 
@@ -256,9 +257,9 @@ class Trainer:
                 emtree_out = self.emtree(var)
                 logits = self.output(emtree_out)
 
-                # --- TARGET HANDLING (Corrected) ---
-                targets = batch_data['target'] + 1 #Correct
-                targets = torch.tensor(targets, dtype=torch.long).to(self.device)  # Convert to tensor and move to device
+                # --- CORRECTED TARGET HANDLING ---
+                targets = batch_data['target'] + 1  # Shift to 0, 1, 2
+                targets = torch.tensor(targets, dtype=torch.long).to(self.device) #Corrected
 
 
                 loss = self.loss_func(logits, targets)  # Pass logits directly
@@ -322,9 +323,9 @@ class Trainer:
                 emtree_out = self.emtree(var)
                 logits = self.output(emtree_out)
 
-                # --- TARGET HANDLING (Corrected) ---
-                targets = batch_data['target'] + 1 # Correct
-                targets = torch.tensor(targets, dtype=torch.long).to(self.device)
+                # --- CORRECTED TARGET HANDLING ---
+                targets = batch_data['target'] + 1  # Shift to 0, 1, 2
+                targets = torch.tensor(targets, dtype=torch.long).to(self.device) #Corrected
 
                 loss = self.loss_func(logits, targets)
                 total_loss += loss.item() * len(batch_data['stock'])
@@ -336,7 +337,6 @@ class Trainer:
 
         total_loss /= len(data['stock'])
         return total_loss, all_predictions, all_targets
-
 
 
     def test(self):
