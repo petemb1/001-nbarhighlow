@@ -197,11 +197,11 @@ def calculate_target(df, prediction_window, close_col):
         current_close = df[close_col].iloc[i]
 
         if current_close >= highest_high:
-            target.iloc[i] = 1
+            target.iloc[i] = 2  # n-bar high (originally 1)
         elif current_close <= lowest_low:
-            target.iloc[i] = -1
+            target.iloc[i] = 1  # n-bar low (originally -1)
         else:
-            target.iloc[i] = 0
+            target.iloc[i] = 0  # Neither (originally 0)
     for i in range(max(0, len(df) - (n - 1)), len(df)):
         target.iloc[i] = 0
     return target
@@ -220,7 +220,7 @@ def sample_by_dates(df, T):
         return {
             'stock': np.array([]),
             'day': np.array([]),
-            'target': np.array([]),
+            'target': np.array([], dtype='int8'),
             **{f'{xi}_ys': np.array([]) for xi in config['data']['features']},
             **{f'{xi}_ems': np.array([]) for xi in config['data']['features']},  # Placeholder
             **{f'{xi}_cis': np.array([]) for xi in config['data']['features']}  # Placeholder

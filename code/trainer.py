@@ -257,8 +257,8 @@ class Trainer:
                 logits = self.output(emtree_out)
 
                 # --- CORRECTED TARGET HANDLING ---
-                targets = torch.tensor(batch_data['target'] + 1, dtype=torch.long).to(self.device)  # Shift and convert
-                targets = F.one_hot(targets, num_classes=3).long()  # One-hot encode
+                targets = torch.tensor(batch_data['target'], dtype=torch.long).to(self.device)  # No +1
+                #targets = F.one_hot(targets, num_classes=3).long()  # One-hot encode #Remove this line
                 # -----------------------------------
 
                 loss = self.loss_func(logits, targets)
@@ -269,14 +269,10 @@ class Trainer:
 
                 train_loss += loss.item() * len(batch_data['stock'])  # Weighted average loss
 
-                # Get predictions (argmax of logits), shift back to -1, 0, 1
-                batch_predictions = torch.argmax(logits, dim=1) - 1
-                # --- CORRECTED: One-hot encode predictions ---
-                batch_predictions_one_hot = F.one_hot(batch_predictions, num_classes=3).cpu().detach().tolist()
-                train_predictions.extend(batch_predictions_one_hot)
-
-                # --- Keep targets as they are (already one-hot encoded) ---
-                train_targets.extend(batch_data['target'])
+                # --- CORRECTED PREDICTION HANDLING ---
+                batch_predictions = torch.argmax(logits, dim=1)  # No - 1
+                train_predictions.extend(batch_predictions.cpu().detach().tolist()) #tolist
+                train_targets.extend(batch_data['target'].tolist()) #tolist
 
 
             train_loss /= len(self.train_data['stock'])
@@ -327,21 +323,17 @@ class Trainer:
                 logits = self.output(emtree_out)
 
                 # --- CORRECTED TARGET HANDLING ---
-                targets = torch.tensor(batch_data['target'] + 1, dtype=torch.long).to(self.device) # Shift
-                targets = F.one_hot(targets, num_classes=3).long() # One-hot encode
+                targets = torch.tensor(batch_data['target'], dtype=torch.long).to(self.device)  # No + 1
+                # targets = F.one_hot(targets, num_classes=3).long() # One-hot encode #Remove this line
                 # ------------------------------------
 
                 loss = self.loss_func(logits, targets)
                 total_loss += loss.item() * len(batch_data['stock'])
 
-                # --- PREDICTION HANDLING (Corrected) ---
-                batch_predictions = torch.argmax(logits, dim=1) - 1 #Correct
-                # --- CORRECTED: One-hot encode predictions ---
-                batch_predictions_one_hot = F.one_hot(batch_predictions, num_classes=3).cpu().tolist()
-                all_predictions.extend(batch_predictions_one_hot)
-
-                # --- Keep targets as they are (already one-hot encoded) ---
-                all_targets.extend(batch_data['target']) #append the original target
+                # --- CORRECTED PREDICTION HANDLING ---
+                batch_predictions = torch.argmax(logits, dim=1)  # No - 1
+                all_predictions.extend(batch_predictions.cpu().tolist()) #tolist
+                all_targets.extend(batch_data['target'].tolist()) #tolist
 
 
         total_loss /= len(data['stock'])
