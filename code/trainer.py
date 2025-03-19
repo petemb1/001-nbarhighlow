@@ -109,7 +109,7 @@ class Trainer:
                 self.test_data = self.load_embeddings_and_ci(self.test_data, 'test')  # Load for test set
             else:
                 print("Warning. Empty test dataset, so no embeddings loaded")
-                
+
             with print_lock:
               print("Embeddings and CI values loaded for test data.")
 
@@ -131,7 +131,14 @@ class Trainer:
         self.emtree_optim = optim.Adam(self.emtree.parameters(), lr=self.learning_rate, weight_decay=self.l2_regularization)
         self.output_optim = optim.Adam(self.output.parameters(), lr=self.learning_rate, weight_decay=self.l2_regularization)
 
-        self.loss_func = nn.CrossEntropyLoss()
+        # Calculate class weights (add this part):
+        targets = self.train_data['target']
+        class_counts = np.bincount(targets)
+        total_samples = len(targets)
+        class_weights = total_samples / (len(class_counts) * class_counts)
+        class_weights = torch.tensor(class_weights, dtype=torch.float32).to(self.device)
+        self.loss_func = nn.CrossEntropyLoss(weight=class_weights)  # Pass weights to loss
+        
         self.model_name = "price_graph"
         with print_lock:
             print("Model and optimizer initialized.")
