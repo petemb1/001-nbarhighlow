@@ -4,8 +4,9 @@ import math
 import torch
 from torch import nn
 import torch.nn.functional as F
-import yaml
+import numpy as np
 import os
+import yaml
 
 # Load configuration
 with open('config.yaml', 'r') as f:
@@ -73,39 +74,43 @@ class SelfAttention(nn.Module):
 
 
 class Layer1(nn.Module):
-    def __init__(self, input_size, hidden_size, device):
+    def __init__(self, input_size, hidden_size, device):  # Add device parameter
         super(Layer1, self).__init__()
-        self.attn1 = nn.Linear(input_size, hidden_size).to(device)
-        self.attn2 = nn.Linear(hidden_size, hidden_size).to(device)
+        self.attn1 = nn.Linear(input_size, hidden_size).to(device)  # Move to device
+        self.attn2 = nn.Linear(hidden_size, hidden_size).to(device) # Move to device
         self.device = device
 
     def forward(self, x):
         x = x.to(self.device)
         z1 = self.attn1(x)
-        a1 = F.relu(z1)
+        a1 = F.relu(z1, inplace=False)  # Add inplace=False
         z2 = self.attn2(a1)
-        a2 = F.relu(z2)
+        a2 = F.relu(z2, inplace=False)  # Add inplace=False
         return a2
 
 class Layer2(nn.Module):
-    def __init__(self, input_size, hidden_size, device):
+    def __init__(self, input_size, hidden_size, device):  # Add device parameter
         super(Layer2, self).__init__()
-        self.attn1 = nn.Linear(input_size, hidden_size).to(device)
-        self.attn2 = nn.Linear(hidden_size, hidden_size).to(device)
+        self.attn1 = nn.Linear(input_size, hidden_size).to(device)  # Move to device
+        self.attn2 = nn.Linear(hidden_size, hidden_size).to(device)  # Move to device
         self.device = device
 
     def forward(self, x):
         x = x.to(self.device)
         z1 = self.attn1(x)
-        a1 = F.relu(z1)
+        a1 = F.relu(z1, inplace=False) # Add inplace=False
         z2 = self.attn2(a1)
-        a2 = F.relu(z2)
+        a2 = F.relu(z2, inplace=False) # Add inplace=False
         return a2
 
 class DAS(nn.Module):
-    def __init__(self, input_size, hidden_size, time_step, drop_ratio, device): # input_size here!
+    def __init__(self, feature_size, hidden_size, time_step, drop_ratio, device): # input_size here!
         super(DAS, self).__init__()
-        self.layer1 = Layer1(input_size, hidden_size, device)  # Use calculated input_size
+        # Correctly calculate input_size based on whether embeddings are used.
+        input_size = 1 + 1  # ys and cis
+        if config['model'].get('embedding_dim') is not None:
+            input_size += config['model']['embedding_dim']  # Add embedding dimension
+        self.layer1 = Layer1(input_size, hidden_size, device)  # Pass correct input_size
         self.layer2 = Layer2(time_step, hidden_size, device)
         self.drop = nn.Dropout(drop_ratio)
         self.device = device
@@ -121,7 +126,9 @@ class DAS(nn.Module):
           var_x = torch.cat((ems, var_y, cis.unsqueeze(-1)), dim=2)
         else:
           var_x = torch.cat((var_y, cis.unsqueeze(-1)), dim=2)
+        #print(f"var_x shape: {var_x.shape}") # Debugging print statement
 
+        var_x = var_x.to(self.device)
         out1 = self.layer1(var_x)
         out1 = out1.transpose(-1,-2)
         out2 = self.layer2(out1)
@@ -138,9 +145,9 @@ class PriceGraph(nn.Module):
         # Correctly calculate input_size here
         input_size = 1 + 1  # ys and cis
         if config['model'].get('embedding_dim') is not None:
-            input_size += config['model']['embedding_dim']
+            input_size += config['model']['embedding_dim']  # Add embedding dimension
         for _ in range(num_features):
-            self.das.append(DAS(input_size, hidden_size, time_step, drop_ratio, self.device)) # Pass input_size
+            self.das.append(DAS(input_size, hidden_size, time_step, drop_ratio, self.device))
 
     def forward(self, var):
         out = self.das[0](var[0]['ems'], var[0]['ys'], var[0]['cis'])
@@ -148,10 +155,12 @@ class PriceGraph(nn.Module):
             out += self.das[i](var[i]['ems'], var[i]['ys'], var[i]['cis'])
         return out
 
+
 class output_layer(nn.Module):
     def __init__(self, last_hidden_size, output_size):
         super(output_layer, self).__init__()
         self.out_layer = nn.Linear(last_hidden_size, output_size)
+        # self.sigmoid = nn.Sigmoid()  # REMOVED Sigmoid
 
     def forward(self, x):
         out = self.out_layer(x)
