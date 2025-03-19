@@ -130,9 +130,9 @@ class DAS(nn.Module):
 
         var_x = var_x.to(self.device)
         out1 = self.layer1(var_x)
-        out1 = out1.transpose(-1,-2)
+        out1 = out1.transpose(-1,-2).clone() #Clone
         out2 = self.layer2(out1)
-        out2 = out2.transpose(-1,-2)
+        out2 = out2.transpose(-1,-2).clone() #Clone
         out = self.drop(out2)
         return out
 
