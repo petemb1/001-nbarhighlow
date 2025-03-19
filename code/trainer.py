@@ -72,7 +72,8 @@ class Trainer:
             print("Sampling data...")
         self.train_data = sample_by_dates(self.train_df, self.time_step)
         self.validation_data = sample_by_dates(self.validation_df, self.time_step)
-        if self.train_data['stock'].size == 0:
+        # Check to make sure self.train_data is not empty.
+        if len(self.train_data['stock']) == 0:
           raise ValueError("Training data is empty after sampling. Check data and parameters.")
         with print_lock:
           print("Data sampled.")
@@ -80,12 +81,22 @@ class Trainer:
         # Load embeddings and CI.  This happens *after* sampling.
         with print_lock:
             print("Loading embeddings and CI values for training data...")
-        self.train_data = self.load_embeddings_and_ci(self.train_data, 'train')
+        #Check if train_data is not an empty list
+        if len(self.train_data['stock']) > 0:
+            self.train_data = self.load_embeddings_and_ci(self.train_data, 'train')
+        else:
+            print("Warning. Empty train dataset, so no embeddings loaded")
+
         with print_lock:
             print("Embeddings and CI values loaded for training data.")
         with print_lock:
             print("Loading embeddings and CI values for validation data...")
-        self.validation_data = self.load_embeddings_and_ci(self.validation_data, 'validation')
+        #Check if val_data is not an empty list
+        if len(self.validation_data['stock']) > 0:
+            self.validation_data = self.load_embeddings_and_ci(self.validation_data, 'validation')
+        else:
+            print("Warning. Empty validation dataset, so no embeddings loaded")
+
         with print_lock:
             print("Embeddings and CI values loaded for validation data.")
 
@@ -93,7 +104,12 @@ class Trainer:
             self.test_data = sample_by_dates(self.test_df, self.time_step)
             with print_lock:
                 print("Loading embeddings and CI values for test data...")
-            self.test_data = self.load_embeddings_and_ci(self.test_data, 'test')  # Load for test set
+            # Check if test data exists.
+            if len(self.test_data['stock']) > 0:
+                self.test_data = self.load_embeddings_and_ci(self.test_data, 'test')  # Load for test set
+            else:
+                print("Warning. Empty test dataset, so no embeddings loaded")
+                
             with print_lock:
               print("Embeddings and CI values loaded for test data.")
 
