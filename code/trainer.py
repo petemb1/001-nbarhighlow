@@ -18,6 +18,9 @@ from dataset import load_dataframe, sample_by_dates  # Import load_dataframe
 import json  # Import json
 from multiprocessing import Lock
 import torch.nn.functional as F
+import torch
+torch.autograd.set_detect_anomaly(True)  # Enable anomaly detection
+
 
 # Set random seeds for reproducibility
 torch.manual_seed(0)
@@ -268,8 +271,13 @@ class Trainer:
 
                 # Get predictions (argmax of logits), shift back to -1, 0, 1
                 batch_predictions = torch.argmax(logits, dim=1) - 1
-                train_predictions.extend(batch_predictions.cpu().detach().numpy())
-                train_targets.extend(batch_data['target'])
+                # --- CORRECTED: One-hot encode predictions ---
+                batch_predictions_one_hot = F.one_hot(batch_predictions, num_classes=3).cpu().detach().tolist()
+                train_predictions.extend(batch_predictions_one_hot)
+
+                # --- Keep targets as they are (already one-hot encoded) ---
+                train_targets.extend(targets.cpu().detach().tolist())
+
 
             train_loss /= len(self.train_data['stock'])
 
@@ -328,8 +336,14 @@ class Trainer:
 
                 # --- PREDICTION HANDLING (Corrected) ---
                 batch_predictions = torch.argmax(logits, dim=1) - 1 #Correct
-                all_predictions.extend(batch_predictions.cpu().numpy())
-                all_targets.extend(batch_data['target']) #append the original target
+                # --- CORRECTED: One-hot encode predictions ---
+                batch_predictions_one_hot = F.one_hot(batch_predictions, num_classes=3).cpu().tolist()
+                all_predictions.extend(batch_predictions_one_hot)
+
+                # --- Keep targets as they are (already one-hot encoded) ---
+                all_targets.extend(targets.cpu().tolist())
+
+
         total_loss /= len(data['stock'])
         return total_loss, all_predictions, all_targets
 
