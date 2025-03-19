@@ -255,7 +255,7 @@ class Trainer:
 
                 # --- CORRECTED TARGET HANDLING ---
                 targets = torch.tensor(batch_data['target'] + 1, dtype=torch.long).to(self.device)  # Shift and convert
-                targets = F.one_hot(targets, num_classes=3).float()  # One-hot encode
+                targets = F.one_hot(targets, num_classes=3).long()  # One-hot encode
                 # -----------------------------------
 
                 loss = self.loss_func(logits, targets)
@@ -320,7 +320,7 @@ class Trainer:
 
                 # --- CORRECTED TARGET HANDLING ---
                 targets = torch.tensor(batch_data['target'] + 1, dtype=torch.long).to(self.device) # Shift
-                targets = F.one_hot(targets, num_classes=3).float() # One-hot encode
+                targets = F.one_hot(targets, num_classes=3).long() # One-hot encode
                 # ------------------------------------
 
                 loss = self.loss_func(logits, targets)
