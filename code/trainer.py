@@ -276,7 +276,7 @@ class Trainer:
                 train_predictions.extend(batch_predictions_one_hot)
 
                 # --- Keep targets as they are (already one-hot encoded) ---
-                train_targets.extend(targets.cpu().detach().tolist())
+                train_targets.extend(batch_data['target'])
 
 
             train_loss /= len(self.train_data['stock'])
@@ -341,7 +341,7 @@ class Trainer:
                 all_predictions.extend(batch_predictions_one_hot)
 
                 # --- Keep targets as they are (already one-hot encoded) ---
-                all_targets.extend(targets.cpu().tolist())
+                all_targets.extend(batch_data['target']) #append the original target
 
 
         total_loss /= len(data['stock'])
