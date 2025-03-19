@@ -153,8 +153,8 @@ class PriceGraph(nn.Module):
         out = self.das[0](var[0]['ems'], var[0]['ys'], var[0]['cis'])
         for i in range(1, len(var)):
             out += self.das[i](var[i]['ems'], var[i]['ys'], var[i]['cis'])
-        return out
-
+        # --- CORRECTED: Return the *last* time step's output ---
+        return out[:, -1, :]  # Shape: (batch_size, hidden_size)
 
 class output_layer(nn.Module):
     def __init__(self, last_hidden_size, output_size):
