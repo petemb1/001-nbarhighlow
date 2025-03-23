@@ -200,28 +200,26 @@ def load_and_split_data(config):
 
 def calculate_target(df, prediction_window, close_col):
     """
-    Calculates the target: -1 for n-bar low, 1 for n-bar high, 0 otherwise.
+    Calculates the target: 0 for > -threshold% change, 1 for within threshold, 2 for > +threshold change.
     Looks *forward* for the prediction window.
     """
     n = prediction_window
-    target = pd.Series(index=df.index, dtype='int8')  # Use int8
-    high_col = 'high'
-    low_col = 'low'
+    threshold = config['data']['target_threshold']  # Get threshold from config
 
-    for i in range(len(df) - (n - 1)):  # Iterate to where a full future window exists
-        window = df.iloc[i + 1: i + n + 1]  # Look *forward*
-        highest_high = window[high_col].max()
-        lowest_low = window[low_col].min()
+    target = pd.Series(1, index=df.index, dtype='int8')  # Initialize to neutral (1)
+
+    for i in range(len(df) - n):  # Iterate up to where a full future window exists
+        future_close = df[close_col].iloc[i + n]  # Get *one* future close price
         current_close = df[close_col].iloc[i]
+        price_change_pct = (future_close - current_close) / current_close
 
-        if current_close >= highest_high:
-            target.iloc[i] = 2  # n-bar high (originally 1)
-        elif current_close <= lowest_low:
-            target.iloc[i] = 1  # n-bar low (originally -1)
-        else:
-            target.iloc[i] = 0  # Neither (originally 0)
-    for i in range(max(0, len(df) - (n - 1)), len(df)):
-        target.iloc[i] = 0
+        if price_change_pct > threshold:
+            target.iloc[i] = 2  # Long
+        elif price_change_pct < -threshold:
+            target.iloc[i] = 0  # Short
+        # else: target is already 1 (neutral)
+
+    # The last 'n' values of target are already initialized as 1.
     return target
 
 def sample_by_dates(df, T):

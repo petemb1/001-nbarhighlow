@@ -19,12 +19,13 @@ data:
   test_start_date: "2022-01-01"
   test_end_date: "2022-12-31"
   time_step: 20          # Length of the historical data window (T)
-  prediction_window: 5  # Bars back/forward for high/low
+  prediction_window: 5  # Bars back/forward for high/low or threshold
+  target_threshold: 0.02  # Add this line.  Set to your desired value (e.g., 0.02 for 2%)
 
 model:
   model_name: model # used for saving analytics
   model_type: 'gcn' # Added a model type,
-  hidden_size: 24   # Changed from 32 to 24
+  hidden_size: 72   # Changed from 32 to 24
   embedding_dim: 32
   dropout_ratio: 0  # Changed from 0 to 
   learning_rate: 0.01 # Changed from 0.01 to 
