@@ -11,6 +11,7 @@ import yfinance as yf
 from functools import partial
 import pickle
 from pathlib import Path
+import talib  # Add this import
 
 # Get the absolute path of the directory containing dataset.py
 PWD = os.path.dirname(os.path.abspath(__file__))
@@ -71,13 +72,22 @@ def stock_sample(df, d, T):
     if len(df_window) < T:
         return None
 
-    # Feature Engineering (within the window)
-    df_window.loc[:, 'bar_shape'] = (df_window['close'] - df_window['open']) / (df_window['high'] - df_window['low']).replace(0, 0.0001)
-    df_window.loc[:, 'bar_range'] = (df_window['high'] - df_window['low']) / df_window['close']
+    # --- Feature Engineering (within the window) ---
+    # Use .loc for all assignments to avoid SettingWithCopyWarning
+    df_window.loc[:, 'rsi'] = talib.RSI(df_window['close'], timeperiod=14)  # RSI with period 14
+    df_window.loc[:, 'slowk'], _ = talib.STOCH(
+        df_window['high'], df_window['low'], df_window['close'],
+        fastk_period=14, slowk_period=1, slowd_period=3
+    )  # STOCH with correct periods
+    df_window.loc[:, 'bar_range'] = (df_window['high'] - df_window['low'])
+    df_window.loc[:, 'bar_shape'] = (df_window['close'] - df_window['low'])
+    df_window.loc[:, 'bar_close_mid'] = (df_window['close'] - (df_window['high'] + df_window['low']) / 2)
     df_window.loc[:, 'prev_high'] = df_window['high'].shift(1)
     df_window.loc[:, 'prev_low'] = df_window['low'].shift(1)
-    df_window.loc[:, 'bar_overlap'] = (df_window[['high', 'prev_high']].min(axis=1) - df_window[['low', 'prev_low']].max(axis=1)) / (df_window['high'] - df_window['low']).replace(0, 0.0001)
-    df_window.drop(['prev_high', 'prev_low'], axis=1, inplace=True)
+    df_window.loc[:, 'bar_overlap'] = (df_window[['high', 'prev_high']].min(axis=1) - df_window[['low', 'prev_low']].max(axis=1))
+    df_window.loc[:, 'bar_close_ema9'] = df_window['close'] - talib.EMA(df_window['close'], timeperiod=9)
+    df_window.drop(['prev_high', 'prev_low'], axis=1, inplace=True)  # Drop temp columns
+
     df_window.fillna(0, inplace=True)  # Fill NaNs introduced by feature engineering with 0.
 
     if df_window.empty:
@@ -92,7 +102,7 @@ def stock_sample(df, d, T):
             yz = np.array(z_score(df_window[xi]))  # Calculate z-score
             if np.isnan(yz).any():  # Check for NaN values after z-score
                 return None
-            xss[f'{xi}_ys'] = yz   # Store NumPy array
+            xss[f'{xi}_ys'] = yz  # Store NumPy array
 
         else:
             print(f"Column {xi} not found")
@@ -138,16 +148,24 @@ def load_and_split_data(config):
             df['file'] = file_[:-4]  # Store filename without extension
             ticker = file_[:-4].lower()
 
-            # --- Feature Engineering: Calculate BEFORE Splitting ---
-            df['bar_shape'] = (df['close'] - df['open']) / (df['high'] - df['low']).replace(0, 0.0001)
-            df['bar_range'] = (df['high'] - df['low']) / df['close']
-            df['prev_high'] = df['high'].shift(1)
-            df['prev_low'] = df['low'].shift(1)
-            df['bar_overlap'] = (df[['high', 'prev_high']].min(axis=1) - df[['low', 'prev_low']].max(axis=1)) / (df['high'] - df['low']).replace(0, 0.0001)
-            df.drop(['prev_high', 'prev_low'], axis=1, inplace=True)  # Drop temporary columns
+            # --- Feature Engineering: Add back in here. ---
+            df.loc[:, 'rsi'] = talib.RSI(df['close'], timeperiod=14)
+            df.loc[:, 'slowk'], _ = talib.STOCH(
+                df['high'], df['low'], df['close'],
+                fastk_period=14, slowk_period=1, slowd_period=3
+            )
+            df.loc[:, 'bar_range'] = (df['high'] - df['low'])
+            df.loc[:, 'bar_shape'] = (df['close'] - df['low'])
+            df.loc[:, 'bar_close_mid'] = (df['close'] - (df['high'] + df['low']) / 2)
+            df.loc[:, 'prev_high'] = df['high'].shift(1)
+            df.loc[:, 'prev_low'] = df['low'].shift(1)
+            df.loc[:, 'bar_overlap'] = (df[['high', 'prev_high']].min(axis=1) - df[['low', 'prev_low']].max(axis=1))
+            df.loc[:, 'bar_close_ema9'] = df['close'] - talib.EMA(df['close'], timeperiod=9)
+            df.drop(['prev_high', 'prev_low'], axis=1, inplace=True)
+
             # --- Fill NaN values with 0 instead of dropping ---
             print(f"DataFrame size BEFORE fillna (feature engineering): {df.shape}")  # Debug print
-            df.fillna(0, inplace=True)  # Fill NaN with 0
+            df.fillna(0, inplace=True)  # Fill NaN with 0 *before* splitting
             print(f"DataFrame size AFTER fillna (feature engineering): {df.shape}")  # Debug print
             print(f"DataFrame after feature engineering and filling NaNs:\n{df.head()}\n{df.tail()}")
 

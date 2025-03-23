@@ -1,6 +1,4 @@
 # dataset_analytics.py
-# To Run:
-# python dataset_analytics.py --config config.yaml
 import argparse
 import yaml
 import pandas as pd
@@ -11,6 +9,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 from dataset import load_and_split_data, config  # Import necessary functions and config
+from statsmodels.tsa.stattools import adfuller
 
 def analyze_data(df, ticker, output_dir):
     """Analyzes and visualizes data for a single ticker.
@@ -40,13 +39,23 @@ def analyze_data(df, ticker, output_dir):
 
     # Plot target distribution and save
     plt.figure(figsize=(8, 6))
-    sns.countplot(x='target', data=df)
+    sns.countplot(x='target', data=df.astype({'target': 'category'})) # Plot target as categories
     plt.title(f'Target Value Distribution - {ticker}')
     plt.savefig(os.path.join(output_dir, f'{ticker}_target_distribution.png'))
     plt.close()  # Close the figure to free memory
 
+    # --- 4. Plot target against date ---
+    plt.figure(figsize=(12, 4))
+    plt.plot(df.index, df['target'])
+    plt.xlabel('Date')
+    plt.ylabel('Target Value')
+    plt.title(f'Target Value vs. Date for {ticker}')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, f'{ticker}_target_vs_date.png'))
+    plt.close()
 
-    # --- 4. Correlation Analysis ---
+    # --- 5. Correlation Analysis ---
     print("\n--- Correlation Analysis ---")
     # Calculate correlation, handling potential errors
     try:
@@ -66,7 +75,7 @@ def analyze_data(df, ticker, output_dir):
     except Exception as e:
         print(f"Error calculating or plotting correlation: {e}")
 
-    # --- 5. Time Series Plots (All Features, including 'target') ---
+    # --- 6. Time Series Plots (All Features, including 'target') ---
     for column in df.columns:
         plt.figure(figsize=(12, 4))
         plt.plot(df.index, df[column])  # Use the index (Date) as the time variable.
@@ -77,7 +86,7 @@ def analyze_data(df, ticker, output_dir):
         plt.close() # Close the figure
 
 
-    # --- 6. Distribution Plots (Histograms - All Features) ---
+    # --- 7. Distribution Plots (Histograms - All Features) ---
     for column in df.columns:
         plt.figure(figsize=(8, 6))
         sns.histplot(df[column], kde=True)  # Use kde=True for a Kernel Density Estimate
@@ -85,13 +94,12 @@ def analyze_data(df, ticker, output_dir):
         plt.savefig(os.path.join(output_dir, f'{ticker}_{column}_distribution.png'))
         plt.close() # Close the figure
 
-    # --- 7. Check for missing values ---
+    # --- 8. Check for missing values ---
     print("\n--- Missing Values ---")
     print(df.isnull().sum())
 
 
-    # --- 8. Stationarity Test (Augmented Dickey-Fuller Test)  ---
-    from statsmodels.tsa.stattools import adfuller
+    # --- 9. Stationarity Test (Augmented Dickey-Fuller Test)  ---
 
     print("\n--- Stationarity Test (Augmented Dickey-Fuller) ---")
     for column in df.columns:

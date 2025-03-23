@@ -10,7 +10,7 @@ paths:
 data:
   download_data: True  # Use True/False for boolean values
   tickers: [SPY]  # List of stock tickers to download
-  features: [open, high, low, close, volume, bar_shape, bar_range, bar_overlap]
+  features: [close, rsi, slowk, bar_range, bar_shape, bar_close_mid, bar_overlap, bar_close_ema9]  # List of features to use
   y_column: close
   train_start_date: "2010-01-01"
   train_end_date: "2019-12-31"
