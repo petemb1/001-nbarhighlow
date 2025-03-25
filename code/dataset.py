@@ -12,6 +12,7 @@ from functools import partial
 import pickle
 from pathlib import Path
 import talib  # Add this import
+from sklearn.linear_model import LinearRegression
 
 # Get the absolute path of the directory containing dataset.py
 PWD = os.path.dirname(os.path.abspath(__file__))
@@ -198,28 +199,52 @@ def load_and_split_data(config):
 
     return train_df, validation_df, test_df
 
+
 def calculate_target(df, prediction_window, close_col):
     """
-    Calculates the target: 0 for > -threshold% change, 1 for within threshold, 2 for > +threshold change.
-    Looks *forward* for the prediction window.
+    Calculates the target based on the slope of a forward-looking linear regression.
+
+    Args:
+        df: DataFrame with 'high', 'low', 'close' columns.
+        prediction_window: Number of bars to look ahead for the regression.
+        close_col: Name of the close column (not directly used here, but kept for consistency).
+
+    Returns:
+        pd.Series: Target values (0 for short, 1 for neutral, 2 for long).
     """
+
     n = prediction_window
-    threshold = config['data']['target_threshold']  # Get threshold from config
+    long_threshold = 0.25  # Example threshold: adjust as needed
+    short_threshold = -0.25 # Example threshold: adjust as needed
 
-    target = pd.Series(1, index=df.index, dtype='int8')  # Initialize to neutral (1)
+    target = pd.Series(1, index=df.index, dtype='int8')  # Initialize all to neutral
 
-    for i in range(len(df) - n):  # Iterate up to where a full future window exists
-        future_close = df[close_col].iloc[i + n]  # Get *one* future close price
-        current_close = df[close_col].iloc[i]
-        price_change_pct = (future_close - current_close) / current_close
+    for i in range(len(df) - n):
+        # Extract HLC data for the *future* window
+        window_data = df.iloc[i+1 : i+1+n][['high', 'low', 'close']].values  # Use .values for NumPy
 
-        if price_change_pct > threshold:
+        # Calculate the average of HLC for each time step
+        hlc = (window_data[:, 0] + window_data[:, 1] + window_data[:, 2]) / 3
+
+        # Prepare data for linear regression
+        X = np.arange(len(hlc)).reshape(-1, 1)  # Independent variable (time index)
+        y = hlc  # Dependent variable (average HLC)
+
+        # Fit linear regression
+        model = LinearRegression()
+        model.fit(X, y)
+
+        # Get the slope
+        slope = model.coef_[0]
+
+        # Assign target based on slope and thresholds
+        if slope > long_threshold:
             target.iloc[i] = 2  # Long
-        elif price_change_pct < -threshold:
+        elif slope < short_threshold:
             target.iloc[i] = 0  # Short
-        # else: target is already 1 (neutral)
+        # else: target remains 1 (Neutral)
 
-    # The last 'n' values of target are already initialized as 1.
+    #The end of the series values remain 1.
     return target
 
 def sample_by_dates(df, T):
