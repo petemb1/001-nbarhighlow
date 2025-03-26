@@ -75,18 +75,18 @@ def stock_sample(df, d, T):
 
     # --- Feature Engineering (within the window) ---
     # Use .loc for all assignments to avoid SettingWithCopyWarning
-    df_window.loc[:, 'rsi'] = talib.RSI(df_window['close'], timeperiod=14)  # RSI with period 14
-    df_window.loc[:, 'slowk'], _ = talib.STOCH(
-        df_window['high'], df_window['low'], df_window['close'],
-        fastk_period=14, slowk_period=1, slowd_period=3
-    )  # STOCH with correct periods
-    df_window.loc[:, 'bar_range'] = (df_window['high'] - df_window['low'])
-    df_window.loc[:, 'bar_shape'] = (df_window['close'] - df_window['low'])
-    df_window.loc[:, 'bar_close_mid'] = (df_window['close'] - (df_window['high'] + df_window['low']) / 2)
+    #df_window.loc[:, 'rsi'] = talib.RSI(df_window['close'], timeperiod=14)  # RSI with period 14
+    #df_window.loc[:, 'slowk'], _ = talib.STOCH(
+    #    df_window['high'], df_window['low'], df_window['close'],
+    #    fastk_period=14, slowk_period=1, slowd_period=3
+    #)  # STOCH with correct periods
+    df_window.loc[:, 'bar_range'] = (df_window['high'] - df_window['low']) / df_window['close']
+    df_window.loc[:, 'bar_shape'] = (df_window['close'] - df_window['open']) / (df_window['high'] - df_window['low']).replace(0, 0.0001) #or close - low
+    df_window.loc[:, 'bar_close_mid'] = (df_window['close'] - (df_window['high'] + df_window['low']) / 2) / (df_window['high'] - df_window['low']).replace(0, 0.0001)
     df_window.loc[:, 'prev_high'] = df_window['high'].shift(1)
     df_window.loc[:, 'prev_low'] = df_window['low'].shift(1)
-    df_window.loc[:, 'bar_overlap'] = (df_window[['high', 'prev_high']].min(axis=1) - df_window[['low', 'prev_low']].max(axis=1))
-    df_window.loc[:, 'bar_close_ema9'] = df_window['close'] - talib.EMA(df_window['close'], timeperiod=9)
+    df_window.loc[:, 'bar_overlap'] = (df_window[['high', 'prev_high']].min(axis=1) - df_window[['low', 'prev_low']].max(axis=1)) / (df_window['high'] - df_window['low']).replace(0, 0.0001)
+    #df_window.loc[:, 'bar_close_ema9'] = df_window['close'] - talib.EMA(df_window['close'], timeperiod=9)
     df_window.drop(['prev_high', 'prev_low'], axis=1, inplace=True)  # Drop temp columns
 
     df_window.fillna(0, inplace=True)  # Fill NaNs introduced by feature engineering with 0.
@@ -150,18 +150,18 @@ def load_and_split_data(config):
             ticker = file_[:-4].lower()
 
             # --- Feature Engineering: Add back in here. ---
-            df.loc[:, 'rsi'] = talib.RSI(df['close'], timeperiod=14)
-            df.loc[:, 'slowk'], _ = talib.STOCH(
-                df['high'], df['low'], df['close'],
-                fastk_period=14, slowk_period=1, slowd_period=3
-            )
-            df.loc[:, 'bar_range'] = (df['high'] - df['low'])
-            df.loc[:, 'bar_shape'] = (df['close'] - df['low'])
-            df.loc[:, 'bar_close_mid'] = (df['close'] - (df['high'] + df['low']) / 2)
+            #df.loc[:, 'rsi'] = talib.RSI(df['close'], timeperiod=14)
+            #df.loc[:, 'slowk'], _ = talib.STOCH(
+            #    df['high'], df['low'], df['close'],
+            #    fastk_period=14, slowk_period=1, slowd_period=3
+            #)
+            df.loc[:, 'bar_range'] = (df['high'] - df['low']) / df['close']
+            df.loc[:, 'bar_shape'] = (df['close'] - df['open']) / (df['high'] - df['low']).replace(0, 0.0001)
+            df.loc[:, 'bar_close_mid'] = (df['close'] - (df['high'] + df['low']) / 2) / (df['high'] - df['low']).replace(0, 0.0001)
             df.loc[:, 'prev_high'] = df['high'].shift(1)
             df.loc[:, 'prev_low'] = df['low'].shift(1)
-            df.loc[:, 'bar_overlap'] = (df[['high', 'prev_high']].min(axis=1) - df[['low', 'prev_low']].max(axis=1))
-            df.loc[:, 'bar_close_ema9'] = df['close'] - talib.EMA(df['close'], timeperiod=9)
+            df.loc[:, 'bar_overlap'] = (df[['high', 'prev_high']].min(axis=1) - df[['low', 'prev_low']].max(axis=1)) / (df['high'] - df['low']).replace(0, 0.0001)
+            #df.loc[:, 'bar_close_ema9'] = df['close'] - talib.EMA(df['close'], timeperiod=9)
             df.drop(['prev_high', 'prev_low'], axis=1, inplace=True)
 
             # --- Fill NaN values with 0 instead of dropping ---
