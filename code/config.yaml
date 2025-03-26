@@ -10,7 +10,8 @@ paths:
 data:
   download_data: True  # Use True/False for boolean values
   tickers: [SPY]  # List of stock tickers to download
-  features: [close, rsi, slowk, bar_range, bar_shape, bar_close_mid, bar_overlap, bar_close_ema9]  # List of features to use
+  #features: [close, rsi, slowk, bar_range, bar_shape, bar_close_mid, bar_overlap, bar_close_ema9]  # List of features to use
+  features: [open, high, low, close, bar_range, bar_shape, bar_close_mid, bar_overlap]
   y_column: close
   train_start_date: "2010-01-01"
   train_end_date: "2019-12-31"
@@ -19,17 +20,23 @@ data:
   test_start_date: "2022-01-01"
   test_end_date: "2022-12-31"
   time_step: 20          # Length of the historical data window (T)
-  prediction_window: 5  # Bars back/forward for high/low or threshold
-  target_threshold: 0.01  # Add this line.  Set to your desired value (e.g., 0.02 for 2%)
+  #prediction_window: 5  # Bars back/forward for high/low or threshold
+  #target_threshold: 0.01  # Add this line.  Set to your desired value (e.g., 0.02 for 2%)
+  # Inside data: section of config.yaml
+  prediction_window: 5  # Keep this for compatibility if needed, but it's not used by the new target
+  target_n_before: 5   # NEW: Number of bars *before* current point for regression (can be 0)
+  target_n_after: 5    # NEW: Number of bars *after* current point for regression (can be 0)
+  target_long_slope_threshold: 0.001  # NEW: Threshold for positive slope (adjust)
+  target_short_slope_threshold: -0.001 # NEW: Threshold for negative slope (adjust)
 
 model:
   model_name: model # used for saving analytics
   model_type: 'gcn' # Added a model type,
-  hidden_size: 72   # Changed from 32 to 24
+  hidden_size: 24   # Changed from 32 to 24 to 72
   embedding_dim: 32
-  dropout_ratio: 0  # Changed from 0 to 
+  dropout_ratio: 0.2  # Changed from 0 to 0.5
   learning_rate: 0.01 # Changed from 0.01 to 
-  l2_regularization: 0.0001  # Changed from 0 to 0.0001
+  l2_regularization: 0 # 0.0001  # Changed from 0 to 0.0001
   batch_size: 256
   epochs: 1000  # Number of epochs to train - changed from 1000 to 100
   validation_split: 0.2  # Not used directly, but kept for reference

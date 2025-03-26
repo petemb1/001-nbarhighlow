@@ -199,52 +199,81 @@ def load_and_split_data(config):
 
     return train_df, validation_df, test_df
 
-
-def calculate_target(df, prediction_window, close_col):
+def calculate_target(df, prediction_window, close_col): # close_col is not used, but kept for signature consistency
     """
-    Calculates the target based on the slope of a forward-looking linear regression.
+    Calculates the target based on the slope of a forward/backward-looking
+    log-linear regression on the 'close' price.
 
-    Args:
-        df: DataFrame with 'high', 'low', 'close' columns.
-        prediction_window: Number of bars to look ahead for the regression.
-        close_col: Name of the close column (not directly used here, but kept for consistency).
-
-    Returns:
-        pd.Series: Target values (0 for short, 1 for neutral, 2 for long).
+    Target values:
+        0: Slope < short_threshold (Short signal)
+        1: short_threshold <= Slope <= long_threshold (Neutral signal)
+        2: Slope > long_threshold (Long signal)
     """
+    n_before = config['data']['target_n_before']
+    n_after = config['data']['target_n_after']
+    long_threshold = config['data']['target_long_slope_threshold']
+    short_threshold = config['data']['target_short_slope_threshold']
 
-    n = prediction_window
-    long_threshold = 0.25  # Example threshold: adjust as needed
-    short_threshold = -0.25 # Example threshold: adjust as needed
+    # Ensure window sizes are non-negative
+    if n_before < 0 or n_after < 0:
+        raise ValueError("n_before and n_after must be non-negative")
+    if n_before == 0 and n_after == 0:
+        raise ValueError("n_before and n_after cannot both be zero")
 
-    target = pd.Series(1, index=df.index, dtype='int8')  # Initialize all to neutral
 
-    for i in range(len(df) - n):
-        # Extract HLC data for the *future* window
-        window_data = df.iloc[i+1 : i+1+n][['high', 'low', 'close']].values  # Use .values for NumPy
+    target = pd.Series(1, index=df.index, dtype='int8')  # Initialize all to neutral (1)
 
-        # Calculate the average of HLC for each time step
-        hlc = (window_data[:, 0] + window_data[:, 1] + window_data[:, 2]) / 3
+    # Create a numpy array for faster access to close prices
+    close_prices = df['close'].values
+
+    for i in range(n_before, len(df) - n_after): # Iterate through valid indices
+        # Define the window indices
+        start_idx = i - n_before
+        end_idx = i + n_after + 1 # +1 to include the end point
+
+        # Extract the 'close' prices for the window
+        window_close = close_prices[start_idx:end_idx]
+
+        # Check for non-positive values before log transformation
+        if np.any(window_close <= 0):
+            # print(f"Skipping index {i} due to non-positive close price in window.") # Optional debug
+            continue # Skip this iteration if non-positive values exist
+
+        # Log transform the close prices
+        log_close = np.log(window_close)
 
         # Prepare data for linear regression
-        X = np.arange(len(hlc)).reshape(-1, 1)  # Independent variable (time index)
-        y = hlc  # Dependent variable (average HLC)
+        # X is the time index within the window [0, 1, ..., window_length-1]
+        X = np.arange(len(log_close)).reshape(-1, 1)
+        y = log_close  # y is the log-transformed price
 
-        # Fit linear regression
-        model = LinearRegression()
-        model.fit(X, y)
+        # Check if we have enough points for regression (at least 2)
+        if len(X) < 2:
+            continue
 
-        # Get the slope
-        slope = model.coef_[0]
+        try:
+            # Fit linear regression
+            model = LinearRegression()
+            model.fit(X, y)
 
-        # Assign target based on slope and thresholds
-        if slope > long_threshold:
-            target.iloc[i] = 2  # Long
-        elif slope < short_threshold:
-            target.iloc[i] = 0  # Short
-        # else: target remains 1 (Neutral)
+            # Get the slope (rate of change in log-price ~ rate of return)
+            slope = model.coef_[0]
 
-    #The end of the series values remain 1.
+            # Assign target based on slope and thresholds
+            if slope > long_threshold:
+                target.iloc[i] = 2  # Long
+            elif slope < short_threshold:
+                target.iloc[i] = 0  # Short
+            # else: target remains 1 (Neutral)
+
+        except Exception as e:
+            print(f"Error during regression at index {i}: {e}") # Handle potential errors
+            continue
+
+
+    # Points at the very beginning/end where a full window isn't possible
+    # remain as the initialized neutral value (1).
+
     return target
 
 def sample_by_dates(df, T):
