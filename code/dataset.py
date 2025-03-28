@@ -59,6 +59,39 @@ def download_data(tickers, data_dir):
             print(f"ERROR: Failed to download or save data for {ticker}. Error: {e}")
             continue
 
+def calculate_log_linear_slope(price_series):
+    """
+    Calculates the slope of a log-linear regression on a given price series.
+
+    Args:
+        price_series (pd.Series or np.array): Series of close prices.
+
+    Returns:
+        float: The calculated slope, or np.nan if calculation fails.
+    """
+    # Ensure we have at least 2 points for regression
+    if len(price_series) < 2:
+        return np.nan
+
+    # Check for non-positive values before log transformation
+    if np.any(price_series <= 0):
+        return np.nan # Cannot take log of non-positive
+
+    log_prices = np.log(price_series)
+
+    # Prepare data for linear regression
+    X = np.arange(len(log_prices)).reshape(-1, 1)  # Time index 0, 1, 2...
+    y = log_prices
+
+    try:
+        model = LinearRegression()
+        model.fit(X, y)
+        slope = model.coef_[0]
+        return slope
+    except Exception as e:
+        # print(f"Warning: Regression failed - {e}") # Optional warning
+        return np.nan
+
 def stock_sample(df, d, T):
     if d not in df.index:
         return None
@@ -80,15 +113,22 @@ def stock_sample(df, d, T):
     #    df_window['high'], df_window['low'], df_window['close'],
     #    fastk_period=14, slowk_period=1, slowd_period=3
     #)  # STOCH with correct periods
-    df_window.loc[:, 'bar_range'] = (df_window['high'] - df_window['low']) / df_window['close']
-    df_window.loc[:, 'bar_shape'] = (df_window['close'] - df_window['open']) / (df_window['high'] - df_window['low']).replace(0, 0.0001) #or close - low
-    df_window.loc[:, 'bar_close_mid'] = (df_window['close'] - (df_window['high'] + df_window['low']) / 2) / (df_window['high'] - df_window['low']).replace(0, 0.0001)
-    df_window.loc[:, 'prev_high'] = df_window['high'].shift(1)
-    df_window.loc[:, 'prev_low'] = df_window['low'].shift(1)
-    df_window.loc[:, 'bar_overlap'] = (df_window[['high', 'prev_high']].min(axis=1) - df_window[['low', 'prev_low']].max(axis=1)) / (df_window['high'] - df_window['low']).replace(0, 0.0001)
+    #df_window.loc[:, 'bar_range'] = (df_window['high'] - df_window['low']) / df_window['close']
+    #df_window.loc[:, 'bar_shape'] = (df_window['close'] - df_window['open']) / (df_window['high'] - df_window['low']).replace(0, 0.0001) #or close - low
+    #df_window.loc[:, 'bar_close_mid'] = (df_window['close'] - (df_window['high'] + df_window['low']) / 2) / (df_window['high'] - df_window['low']).replace(0, 0.0001)
+    #df_window.loc[:, 'prev_high'] = df_window['high'].shift(1)
+    #df_window.loc[:, 'prev_low'] = df_window['low'].shift(1)
+    #df_window.loc[:, 'bar_overlap'] = (df_window[['high', 'prev_high']].min(axis=1) - df_window[['low', 'prev_low']].max(axis=1)) / (df_window['high'] - df_window['low']).replace(0, 0.0001)
     #df_window.loc[:, 'bar_close_ema9'] = df_window['close'] - talib.EMA(df_window['close'], timeperiod=9)
-    df_window.drop(['prev_high', 'prev_low'], axis=1, inplace=True)  # Drop temp columns
+    #df_window.drop(['prev_high', 'prev_low'], axis=1, inplace=True)  # Drop temp columns
 
+    # --- Feature Engineering (within the window - MIRROR load_and_split_data) ---
+    past_windows = config['data']['log_slope_past_windows']
+    for n in past_windows:
+        # Apply rolling calculation within the window
+        df_window[f'slope_{n}'] = df_window['close'].rolling(window=n, min_periods=n).apply(calculate_log_linear_slope, raw=True)
+
+    # --- Fill NaN values with 0 instead of dropping ---
     df_window.fillna(0, inplace=True)  # Fill NaNs introduced by feature engineering with 0.
 
     if df_window.empty:
@@ -149,20 +189,27 @@ def load_and_split_data(config):
             df['file'] = file_[:-4]  # Store filename without extension
             ticker = file_[:-4].lower()
 
+            # --- Feature Engineering: Calculate NEW Slope Features ---
+            past_windows = config['data']['log_slope_past_windows']
+            for n in past_windows:
+                # Apply the slope calculation on a rolling window of size n
+                # min_periods=n ensures we only calculate when we have a full window
+                df[f'slope_{n}'] = df['close'].rolling(window=n, min_periods=n).apply(calculate_log_linear_slope, raw=True) # raw=True passes NumPy array
+
             # --- Feature Engineering: Add back in here. ---
             #df.loc[:, 'rsi'] = talib.RSI(df['close'], timeperiod=14)
             #df.loc[:, 'slowk'], _ = talib.STOCH(
             #    df['high'], df['low'], df['close'],
             #    fastk_period=14, slowk_period=1, slowd_period=3
             #)
-            df.loc[:, 'bar_range'] = (df['high'] - df['low']) / df['close']
-            df.loc[:, 'bar_shape'] = (df['close'] - df['open']) / (df['high'] - df['low']).replace(0, 0.0001)
-            df.loc[:, 'bar_close_mid'] = (df['close'] - (df['high'] + df['low']) / 2) / (df['high'] - df['low']).replace(0, 0.0001)
-            df.loc[:, 'prev_high'] = df['high'].shift(1)
-            df.loc[:, 'prev_low'] = df['low'].shift(1)
-            df.loc[:, 'bar_overlap'] = (df[['high', 'prev_high']].min(axis=1) - df[['low', 'prev_low']].max(axis=1)) / (df['high'] - df['low']).replace(0, 0.0001)
+            #df.loc[:, 'bar_range'] = (df['high'] - df['low']) / df['close']
+            #df.loc[:, 'bar_shape'] = (df['close'] - df['open']) / (df['high'] - df['low']).replace(0, 0.0001)
+            #df.loc[:, 'bar_close_mid'] = (df['close'] - (df['high'] + df['low']) / 2) / (df['high'] - df['low']).replace(0, 0.0001)
+            #df.loc[:, 'prev_high'] = df['high'].shift(1)
+            #df.loc[:, 'prev_low'] = df['low'].shift(1)
+            #df.loc[:, 'bar_overlap'] = (df[['high', 'prev_high']].min(axis=1) - df[['low', 'prev_low']].max(axis=1)) / (df['high'] - df['low']).replace(0, 0.0001)
             #df.loc[:, 'bar_close_ema9'] = df['close'] - talib.EMA(df['close'], timeperiod=9)
-            df.drop(['prev_high', 'prev_low'], axis=1, inplace=True)
+            #df.drop(['prev_high', 'prev_low'], axis=1, inplace=True)
 
             # --- Fill NaN values with 0 instead of dropping ---
             print(f"DataFrame size BEFORE fillna (feature engineering): {df.shape}")  # Debug print
@@ -199,17 +246,34 @@ def load_and_split_data(config):
 
     return train_df, validation_df, test_df
 
-def calculate_target(df, prediction_window, close_col): # prediction_window is now effectively 1
+def calculate_target(df, n_future, close_col): # Renamed arg for clarity
     """
-    Calculates the target: 1 if next close >= current close, 0 otherwise.
+    Calculates the target: 1 if future slope > 0, 0 otherwise.
+    Uses log-linear regression on future 'close' prices.
     """
-    # Shift the close price column by -1 to get the next day's close
-    # Use fill_value to handle the last row (assign neutral or a specific value)
-    next_close = df[close_col].shift(-1, fill_value=df[close_col].iloc[-1]) # Avoid NaN on last row
+    # Ensure window sizes are non-negative
+    if n_future <= 0:
+         raise ValueError("n_future must be positive")
 
-    # Compare next close to current close
-    target = (next_close >= df[close_col]).astype('int8') # 1 if True (up or equal), 0 if False (down)
+    target = pd.Series(0, index=df.index, dtype='int8') # Initialize to 0 (down/neutral)
 
+    close_prices = df[close_col].values # Faster access
+
+    # Calculate slopes using a rolling window looking *forward*
+    # We calculate the slope for window [i to i+n_future] and assign it to target[i]
+    for i in range(len(df) - n_future):
+        # Window includes current bar 'i' up to 'i+n_future-1'
+        # But the regression should look from 'i' to 'i+n_future'
+        future_window_close = close_prices[i : i + n_future + 1] # Correct window slicing for future
+
+        if len(future_window_close) != n_future + 1: # Ensure full window
+             continue
+
+        slope = calculate_log_linear_slope(future_window_close)
+
+        if slope is not np.nan and slope > 0:
+            target.iloc[i] = 1 # Set to 1 only if slope is positive and valid
+    # Points at the end where a future window can't be formed remain 0.
     return target
 
 def sample_by_dates(df, T):

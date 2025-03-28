@@ -283,7 +283,7 @@ class Trainer:
                 emtree_out = self.emtree(var)
                 logits = self.output(emtree_out)
 
-                # --- CORRECTED TARGET HANDLING ---
+                # --- CORRECTED TARGET HANDLING for Binary ---
                 targets = torch.tensor(batch_data['target'], dtype=torch.float32).unsqueeze(-1).to(self.device) # Float, add dim
 
                 loss = self.loss_func(logits, targets) # Pass logits and float targets
@@ -294,7 +294,7 @@ class Trainer:
 
                 train_loss += loss.item() * len(batch_data['stock'])
 
-                # --- CORRECTED PREDICTION HANDLING ---
+                # --- CORRECTED PREDICTION HANDLING for Binary ---
                 # Apply sigmoid to logits, then threshold at 0.5
                 batch_predictions = (torch.sigmoid(logits) > 0.5).long() # Get 0 or 1 predictions
                 train_predictions.extend(batch_predictions.cpu().detach().squeeze().tolist()) # Squeeze and convert
@@ -348,13 +348,13 @@ class Trainer:
                 emtree_out = self.emtree(var)
                 logits = self.output(emtree_out)
 
-                # --- CORRECTED TARGET HANDLING ---
+                # --- CORRECTED TARGET HANDLING for Binary ---
                 targets = torch.tensor(batch_data['target'], dtype=torch.float32).unsqueeze(-1).to(self.device) # Float, add dim
 
                 loss = self.loss_func(logits, targets)
                 total_loss += loss.item() * len(batch_data['stock'])
 
-                # --- CORRECTED PREDICTION HANDLING ---
+                # --- CORRECTED PREDICTION HANDLING for Binary ---
                 batch_predictions = (torch.sigmoid(logits) > 0.5).long() # Get 0 or 1 predictions
                 all_predictions.extend(batch_predictions.cpu().squeeze().tolist()) # Squeeze and convert
                 all_targets.extend(batch_data['target'].tolist()) # Targets are already 0/1
