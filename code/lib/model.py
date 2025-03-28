@@ -157,11 +157,12 @@ class PriceGraph(nn.Module):
         return out[:, -1, :]  # Shape: (batch_size, hidden_size)
 
 class output_layer(nn.Module):
-    def __init__(self, last_hidden_size, output_size):
+    def __init__(self, last_hidden_size, output_size=1): # Changed output_size to 1
         super(output_layer, self).__init__()
         self.out_layer = nn.Linear(last_hidden_size, output_size)
-        # self.sigmoid = nn.Sigmoid()  # REMOVED Sigmoid
+        # NO Sigmoid here if using BCEWithLogitsLoss
 
     def forward(self, x):
         out = self.out_layer(x)
+        # Output is now a single logit per sample, shape (batch_size, 1)
         return out
