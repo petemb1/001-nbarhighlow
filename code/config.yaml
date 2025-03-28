@@ -24,19 +24,19 @@ data:
   #target_threshold: 0.01  # Add this line.  Set to your desired value (e.g., 0.02 for 2%)
   # Inside data: section of config.yaml
   prediction_window: 5  # Keep this for compatibility if needed, but it's not used by the new target
-  target_n_before: 5   # NEW: Number of bars *before* current point for regression (can be 0)
-  target_n_after: 5    # NEW: Number of bars *after* current point for regression (can be 0)
-  target_long_slope_threshold: 0.001  # NEW: Threshold for positive slope (adjust)
-  target_short_slope_threshold: -0.001 # NEW: Threshold for negative slope (adjust)
+  target_n_before: 0   # NEW: Number of bars *before* current point for regression (can be 0)
+  target_n_after: 3    # NEW: Number of bars *after* current point for regression (can be 0)
+  target_long_slope_threshold: 0.0024  # NEW: Threshold for positive slope (adjust)
+  target_short_slope_threshold: -0.0007 # NEW: Threshold for negative slope (adjust)
 
 model:
   model_name: model # used for saving analytics
   model_type: 'gcn' # Added a model type,
   hidden_size: 24   # Changed from 32 to 24 to 72
   embedding_dim: 32
-  dropout_ratio: 0.2  # Changed from 0 to 0.5
-  learning_rate: 0.01 # Changed from 0.01 to 
-  l2_regularization: 0 # 0.0001  # Changed from 0 to 0.0001
+  dropout_ratio: 0  # Changed from 0 to 0.5
+  learning_rate: 0.0001 # Changed from 0.01 to 
+  l2_regularization: 0.0001 # 0.0001  # Changed from 0 to 0.0001
   batch_size: 256
   epochs: 1000  # Number of epochs to train - changed from 1000 to 100
   validation_split: 0.2  # Not used directly, but kept for reference
