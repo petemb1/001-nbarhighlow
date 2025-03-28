@@ -20,14 +20,11 @@ data:
   test_start_date: "2022-01-01"
   test_end_date: "2022-12-31"
   time_step: 20          # Length of the historical data window (T)
-  #prediction_window: 5  # Bars back/forward for high/low or threshold
-  #target_threshold: 0.01  # Add this line.  Set to your desired value (e.g., 0.02 for 2%)
-  # Inside data: section of config.yaml
-  prediction_window: 5  # Keep this for compatibility if needed, but it's not used by the new target
-  target_n_before: 0   # NEW: Number of bars *before* current point for regression (can be 0)
-  target_n_after: 3    # NEW: Number of bars *after* current point for regression (can be 0)
-  target_long_slope_threshold: 0.0024  # NEW: Threshold for positive slope (adjust)
-  target_short_slope_threshold: -0.0007 # NEW: Threshold for negative slope (adjust)
+  prediction_window: 1 # Set to 1, as we only look 1 day ahead for this target
+  #target_n_before: 0   # NEW: Number of bars *before* current point for regression (can be 0)
+  #target_n_after: 3    # NEW: Number of bars *after* current point for regression (can be 0)
+  #target_long_slope_threshold: 0.0024  # NEW: Threshold for positive slope (adjust)
+  #target_short_slope_threshold: -0.0007 # NEW: Threshold for negative slope (adjust)
 
 model:
   model_name: model # used for saving analytics

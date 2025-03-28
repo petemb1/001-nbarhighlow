@@ -199,80 +199,16 @@ def load_and_split_data(config):
 
     return train_df, validation_df, test_df
 
-def calculate_target(df, prediction_window, close_col): # close_col is not used, but kept for signature consistency
+def calculate_target(df, prediction_window, close_col): # prediction_window is now effectively 1
     """
-    Calculates the target based on the slope of a forward/backward-looking
-    log-linear regression on the 'close' price.
-
-    Target values:
-        0: Slope < short_threshold (Short signal)
-        1: short_threshold <= Slope <= long_threshold (Neutral signal)
-        2: Slope > long_threshold (Long signal)
+    Calculates the target: 1 if next close >= current close, 0 otherwise.
     """
-    n_before = config['data']['target_n_before']
-    n_after = config['data']['target_n_after']
-    long_threshold = config['data']['target_long_slope_threshold']
-    short_threshold = config['data']['target_short_slope_threshold']
+    # Shift the close price column by -1 to get the next day's close
+    # Use fill_value to handle the last row (assign neutral or a specific value)
+    next_close = df[close_col].shift(-1, fill_value=df[close_col].iloc[-1]) # Avoid NaN on last row
 
-    # Ensure window sizes are non-negative
-    if n_before < 0 or n_after < 0:
-        raise ValueError("n_before and n_after must be non-negative")
-    if n_before == 0 and n_after == 0:
-        raise ValueError("n_before and n_after cannot both be zero")
-
-
-    target = pd.Series(1, index=df.index, dtype='int8')  # Initialize all to neutral (1)
-
-    # Create a numpy array for faster access to close prices
-    close_prices = df['close'].values
-
-    for i in range(n_before, len(df) - n_after): # Iterate through valid indices
-        # Define the window indices
-        start_idx = i - n_before
-        end_idx = i + n_after + 1 # +1 to include the end point
-
-        # Extract the 'close' prices for the window
-        window_close = close_prices[start_idx:end_idx]
-
-        # Check for non-positive values before log transformation
-        if np.any(window_close <= 0):
-            # print(f"Skipping index {i} due to non-positive close price in window.") # Optional debug
-            continue # Skip this iteration if non-positive values exist
-
-        # Log transform the close prices
-        log_close = np.log(window_close)
-
-        # Prepare data for linear regression
-        # X is the time index within the window [0, 1, ..., window_length-1]
-        X = np.arange(len(log_close)).reshape(-1, 1)
-        y = log_close  # y is the log-transformed price
-
-        # Check if we have enough points for regression (at least 2)
-        if len(X) < 2:
-            continue
-
-        try:
-            # Fit linear regression
-            model = LinearRegression()
-            model.fit(X, y)
-
-            # Get the slope (rate of change in log-price ~ rate of return)
-            slope = model.coef_[0]
-
-            # Assign target based on slope and thresholds
-            if slope > long_threshold:
-                target.iloc[i] = 2  # Long
-            elif slope < short_threshold:
-                target.iloc[i] = 0  # Short
-            # else: target remains 1 (Neutral)
-
-        except Exception as e:
-            print(f"Error during regression at index {i}: {e}") # Handle potential errors
-            continue
-
-
-    # Points at the very beginning/end where a full window isn't possible
-    # remain as the initialized neutral value (1).
+    # Compare next close to current close
+    target = (next_close >= df[close_col]).astype('int8') # 1 if True (up or equal), 0 if False (down)
 
     return target
 

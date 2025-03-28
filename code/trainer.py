@@ -126,7 +126,7 @@ class Trainer:
         with print_lock:
             print("Initializing model and optimizer...")
         self.emtree = PriceGraph(feature_size, self.hidden_size, self.time_step, self.drop_ratio, self.num_features).to(self.device)
-        self.output = output_layer(last_hidden_size=self.hidden_size, output_size=3).to(self.device)
+        self.output = output_layer(last_hidden_size=self.hidden_size, output_size=1).to(self.device) # Change output_size to 1
 
         self.emtree_optim = optim.Adam(self.emtree.parameters(), lr=self.learning_rate, weight_decay=self.l2_regularization)
         self.output_optim = optim.Adam(self.output.parameters(), lr=self.learning_rate, weight_decay=self.l2_regularization)
@@ -139,7 +139,9 @@ class Trainer:
         total_samples = len(targets)
         class_weights = total_samples / (len(class_counts) * class_counts)
         class_weights = torch.tensor(class_weights, dtype=torch.float32).to(self.device)
-        self.loss_func = nn.CrossEntropyLoss(weight=class_weights)  # Pass weights to loss
+        #self.loss_func = nn.CrossEntropyLoss(weight=class_weights)  # Pass weights to loss
+        # Change loss function to BCEWithLogitsLoss for binary classification
+        self.loss_func = nn.BCEWithLogitsLoss() # Correct loss for binary logits
 
         self.model_name = "price_graph"
         with print_lock:
@@ -282,22 +284,21 @@ class Trainer:
                 logits = self.output(emtree_out)
 
                 # --- CORRECTED TARGET HANDLING ---
-                targets = torch.tensor(batch_data['target'], dtype=torch.long).to(self.device)  # No +1
-                #targets = F.one_hot(targets, num_classes=3).long()  # One-hot encode #Remove this line
-                # -----------------------------------
+                targets = torch.tensor(batch_data['target'], dtype=torch.float32).unsqueeze(-1).to(self.device) # Float, add dim
 
-                loss = self.loss_func(logits, targets)
+                loss = self.loss_func(logits, targets) # Pass logits and float targets
                 loss.backward()
 
                 self.emtree_optim.step()
                 self.output_optim.step()
 
-                train_loss += loss.item() * len(batch_data['stock'])  # Weighted average loss
+                train_loss += loss.item() * len(batch_data['stock'])
 
                 # --- CORRECTED PREDICTION HANDLING ---
-                batch_predictions = torch.argmax(logits, dim=1)  # No - 1
-                train_predictions.extend(batch_predictions.cpu().detach().tolist()) #tolist
-                train_targets.extend(batch_data['target'].tolist()) #tolist
+                # Apply sigmoid to logits, then threshold at 0.5
+                batch_predictions = (torch.sigmoid(logits) > 0.5).long() # Get 0 or 1 predictions
+                train_predictions.extend(batch_predictions.cpu().detach().squeeze().tolist()) # Squeeze and convert
+                train_targets.extend(batch_data['target'].tolist()) # Targets are already 0/1
 
 
             train_loss /= len(self.train_data['stock'])
@@ -348,17 +349,15 @@ class Trainer:
                 logits = self.output(emtree_out)
 
                 # --- CORRECTED TARGET HANDLING ---
-                targets = torch.tensor(batch_data['target'], dtype=torch.long).to(self.device)  # No + 1
-                # targets = F.one_hot(targets, num_classes=3).long() # One-hot encode #Remove this line
-                # ------------------------------------
+                targets = torch.tensor(batch_data['target'], dtype=torch.float32).unsqueeze(-1).to(self.device) # Float, add dim
 
                 loss = self.loss_func(logits, targets)
                 total_loss += loss.item() * len(batch_data['stock'])
 
                 # --- CORRECTED PREDICTION HANDLING ---
-                batch_predictions = torch.argmax(logits, dim=1)  # No - 1
-                all_predictions.extend(batch_predictions.cpu().tolist()) #tolist
-                all_targets.extend(batch_data['target'].tolist()) #tolist
+                batch_predictions = (torch.sigmoid(logits) > 0.5).long() # Get 0 or 1 predictions
+                all_predictions.extend(batch_predictions.cpu().squeeze().tolist()) # Squeeze and convert
+                all_targets.extend(batch_data['target'].tolist()) # Targets are already 0/1
 
 
         total_loss /= len(data['stock'])
