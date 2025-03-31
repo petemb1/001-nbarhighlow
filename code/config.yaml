@@ -28,7 +28,7 @@ data:
 model:
   model_name: model # used for saving analytics
   model_type: 'gcn' # Added a model type,
-  hidden_size: 24   # Changed from 32 to 24 to 72
+  hidden_size: 4   # Changed from 32 to 24 to 72
   embedding_dim: 32
   dropout_ratio: 0  # Changed from 0 to 0.5
   learning_rate: 0.0001 # Changed from 0.01 to 
@@ -54,6 +54,7 @@ struc2vec:
 training:
   device: 'cuda'  # or 'cpu'
   log_interval: 100
+  early_stopping_patience: 15  # NEW: Number of epochs to wait for validation loss improvement
 
 testing:       # Restored Testing section
   test_model: False  # Use True/False, Set to True to run in test mode, False for training

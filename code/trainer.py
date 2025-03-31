@@ -142,8 +142,15 @@ class Trainer:
         #self.loss_func = nn.CrossEntropyLoss(weight=class_weights)  # Pass weights to loss
         # Change loss function to BCEWithLogitsLoss for binary classification
         self.loss_func = nn.BCEWithLogitsLoss() # Correct loss for binary logits
-
         self.model_name = "price_graph"
+
+        # --- Early Stopping Initialization ---
+        self.patience = config['training']['early_stopping_patience']
+        self.best_val_loss = float('inf')
+        self.epochs_no_improve = 0
+        self.early_stop = False
+        # -----------------------------------
+
         with print_lock:
             print("Model and optimizer initialized.")
 
@@ -321,6 +328,32 @@ class Trainer:
                 print(f"Epoch {epoch+1}/{self.epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
                 print(f"Train Acc: {train_accuracy:.4f}, Prec: {train_precision:.4f}, Rec: {train_recall:.4f}, F1: {train_f1:.4f}")
                 print(f"Val Acc: {val_accuracy:.4f}, Prec: {val_precision:.4f}, Rec: {val_recall:.4f}, F1: {val_f1:.4f}")
+
+            # --- Early Stopping Logic ---
+            if val_loss < self.best_val_loss:
+                self.best_val_loss = val_loss
+                self.epochs_no_improve = 0  # Reset counter on improvement
+                torch.save({
+                    'emtree_state_dict': self.emtree.state_dict(),
+                    'output_state_dict': self.output.state_dict(),
+                    'config': self.config,
+                    }, f"{self.model_name}_best.pth")
+                with print_lock:
+                    print(f"Validation loss improved. Saved best model to {self.model_name}_best.pth")
+            else:
+                self.epochs_no_improve += 1
+                with print_lock:
+                    print(f"Validation loss did not improve for {self.epochs_no_improve} epochs.")
+                if self.epochs_no_improve >= self.patience:
+                    with print_lock:
+                      print(f"Early stopping triggered after {epoch+1} epochs!")
+                    self.early_stop = True
+                    break  # Exit the training loop
+
+        if not self.early_stop: # Print if training finished without early stopping
+            with print_lock:
+                print(f"Training completed after {self.epochs} epochs.")
+
 
             # --- Save Best Model ---
             if val_loss < best_val_loss:
