@@ -126,7 +126,8 @@ class Trainer:
         with print_lock:
             print("Initializing model and optimizer...")
         self.emtree = PriceGraph(feature_size, self.hidden_size, self.time_step, self.drop_ratio, self.num_features).to(self.device)
-        self.output = output_layer(last_hidden_size=self.hidden_size, output_size=1).to(self.device) # Change output_size to 1
+        self.output = output_layer(last_hidden_size=self.hidden_size, output_size=4).to(self.device) # Set output_size=4
+        
 
         self.emtree_optim = optim.Adam(self.emtree.parameters(), lr=self.learning_rate, weight_decay=self.l2_regularization)
         self.output_optim = optim.Adam(self.output.parameters(), lr=self.learning_rate, weight_decay=self.l2_regularization)
@@ -139,9 +140,10 @@ class Trainer:
         total_samples = len(targets)
         class_weights = total_samples / (len(class_counts) * class_counts)
         class_weights = torch.tensor(class_weights, dtype=torch.float32).to(self.device)
-        #self.loss_func = nn.CrossEntropyLoss(weight=class_weights)  # Pass weights to loss
+        self.loss_func = nn.CrossEntropyLoss(weight=class_weights)  # Pass weights to loss
         # Change loss function to BCEWithLogitsLoss for binary classification
-        self.loss_func = nn.BCEWithLogitsLoss() # Correct loss for binary logits
+        #self.loss_func = nn.BCEWithLogitsLoss() # Correct loss for binary logits
+        #self.loss_func = nn.CrossEntropyLoss() # Keep CrossEntropyLoss
         self.model_name = "price_graph"
 
         # --- Early Stopping Initialization ---
@@ -153,6 +155,16 @@ class Trainer:
 
         with print_lock:
             print("Model and optimizer initialized.")
+
+        # Example snippet to add in trainer.py __init__ after loading/sampling
+        with print_lock:
+            print("\n--- Target Distribution (Train) ---")
+            print(self.train_df['target'].value_counts(normalize=True).sort_index()) # Use normalize=True for percentages
+            print("\n--- Target Distribution (Validation) ---")
+            print(self.validation_df['target'].value_counts(normalize=True).sort_index())
+            if self.test_df is not None:
+                print("\n--- Target Distribution (Test) ---")
+                print(self.test_df['target'].value_counts(normalize=True).sort_index())
 
     def load_embeddings_and_ci(self, data, dataset_type):
         """Loads pre-computed embeddings and CI values, handling potential errors."""
@@ -290,10 +302,10 @@ class Trainer:
                 emtree_out = self.emtree(var)
                 logits = self.output(emtree_out)
 
-                # --- CORRECTED TARGET HANDLING for Binary ---
-                targets = torch.tensor(batch_data['target'], dtype=torch.float32).unsqueeze(-1).to(self.device) # Float, add dim
+                # --- CORRECTED TARGET HANDLING ---
+                targets = torch.tensor(batch_data['target'], dtype=torch.long).to(self.device)  # Target is already 0, 1, 2, 3
 
-                loss = self.loss_func(logits, targets) # Pass logits and float targets
+                loss = self.loss_func(logits, targets) # Pass logits and integer targets
                 loss.backward()
 
                 self.emtree_optim.step()
@@ -301,11 +313,10 @@ class Trainer:
 
                 train_loss += loss.item() * len(batch_data['stock'])
 
-                # --- CORRECTED PREDICTION HANDLING for Binary ---
-                # Apply sigmoid to logits, then threshold at 0.5
-                batch_predictions = (torch.sigmoid(logits) > 0.5).long() # Get 0 or 1 predictions
-                train_predictions.extend(batch_predictions.cpu().detach().squeeze().tolist()) # Squeeze and convert
-                train_targets.extend(batch_data['target'].tolist()) # Targets are already 0/1
+                # --- CORRECTED PREDICTION HANDLING ---
+                batch_predictions = torch.argmax(logits, dim=1) # Prediction is class index 0, 1, 2, or 3
+                train_predictions.extend(batch_predictions.cpu().detach().tolist())
+                train_targets.extend(batch_data['target'].tolist()) # Use original 0, 1, 2, 3 targets
 
 
             train_loss /= len(self.train_data['stock'])
@@ -323,6 +334,18 @@ class Trainer:
             val_precision = precision_score(val_targets, val_predictions, average='weighted', zero_division=0)
             val_recall = recall_score(val_targets, val_predictions, average='weighted', zero_division=0)
             val_f1 = f1_score(val_targets, val_predictions, average='weighted', zero_division=0)
+
+            # --- Print Metrics ---
+            # Inside train() after metric calculations
+            from sklearn.metrics import classification_report
+            with print_lock:
+                print("\n--- Training Classification Report ---")
+                # Important: Use the original targets (0,1,2,3) and predictions (0,1,2,3)
+                # Ensure train_targets contains 0,1,2,3 and train_predictions contains 0,1,2,3
+                # The predictions are currently argmax() - no need to shift back for metrics
+                print(classification_report(train_targets, train_predictions, labels=[0, 1, 2, 3], zero_division=0))
+                print("\n--- Validation Classification Report ---")
+                print(classification_report(val_targets, val_predictions, labels=[0, 1, 2, 3], zero_division=0))
 
             with print_lock:
                 print(f"Epoch {epoch+1}/{self.epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
@@ -381,16 +404,17 @@ class Trainer:
                 emtree_out = self.emtree(var)
                 logits = self.output(emtree_out)
 
-                # --- CORRECTED TARGET HANDLING for Binary ---
-                targets = torch.tensor(batch_data['target'], dtype=torch.float32).unsqueeze(-1).to(self.device) # Float, add dim
+                # --- Snippet for evaluate method in trainer.py ---
+                # --- CORRECTED TARGET HANDLING ---
+                targets = torch.tensor(batch_data['target'], dtype=torch.long).to(self.device)  # Target is already 0, 1, 2, 3
 
                 loss = self.loss_func(logits, targets)
                 total_loss += loss.item() * len(batch_data['stock'])
 
-                # --- CORRECTED PREDICTION HANDLING for Binary ---
-                batch_predictions = (torch.sigmoid(logits) > 0.5).long() # Get 0 or 1 predictions
-                all_predictions.extend(batch_predictions.cpu().squeeze().tolist()) # Squeeze and convert
-                all_targets.extend(batch_data['target'].tolist()) # Targets are already 0/1
+                # --- CORRECTED PREDICTION HANDLING ---
+                batch_predictions = torch.argmax(logits, dim=1) # Prediction is class index 0, 1, 2, or 3
+                all_predictions.extend(batch_predictions.cpu().tolist())
+                all_targets.extend(batch_data['target'].tolist()) # Use original 0, 1, 2, 3 targets
 
 
         total_loss /= len(data['stock'])
@@ -420,6 +444,13 @@ class Trainer:
         test_precision = precision_score(test_targets, test_predictions, average='weighted', zero_division=0)
         test_recall = recall_score(test_targets, test_predictions, average='weighted', zero_division=0)
         test_f1 = f1_score(test_targets, test_predictions, average='weighted', zero_division=0)
+        
+        # Inside test() after metric calculations
+        from sklearn.metrics import classification_report
+        with print_lock:
+            print("\n--- Test Classification Report ---")
+            print(classification_report(test_targets, test_predictions, labels=[0, 1, 2, 3], zero_division=0))
+        
         with print_lock:
             print("\n--- Test Results ---")
             print(f"Test Loss: {test_loss:.4f}")

@@ -11,8 +11,8 @@ data:
   download_data: True  # Use True/False for boolean values
   tickers: [SPY]  # List of stock tickers to download
   #features: [close, rsi, slowk, bar_range, bar_shape, bar_close_mid, bar_overlap, bar_close_ema9]  # List of features to use
-  #features: [open, high, low, close, bar_range, bar_shape, bar_close_mid, bar_overlap]
-  features: [open, high, low, close, slope_5, slope_8, slope_13, slope_21] # Includes OHLC + Slopes
+  features: [open, high, low, close, bar_range, bar_shape, bar_close_mid, bar_overlap]
+  #features: [open, high, low, close, slope_5, slope_8, slope_13, slope_21] # Includes OHLC + Slopes
   y_column: close
   train_start_date: "2010-01-01"
   train_end_date: "2019-12-31"
@@ -21,17 +21,17 @@ data:
   test_start_date: "2022-01-01"
   test_end_date: "2022-12-31"
   time_step: 20
-  prediction_window: 5 # For target calculation
-  log_slope_past_windows: [5, 8, 13, 21] # For slope features
-  target_log_slope_future_window: 5 # For target calculation
+  prediction_window: 5   # Window for n-bar high/low target calculation
+  #log_slope_past_windows: [5, 8, 13, 21] # For slope features
+  #target_log_slope_future_window: 5 # For target calculation
 
 model:
   model_name: model # used for saving analytics
   model_type: 'gcn' # Added a model type,
-  hidden_size: 4   # Changed from 32 to 24 to 72
+  hidden_size: 16   # Changed from 32 to 24 to 72
   embedding_dim: 32
-  dropout_ratio: 0  # Changed from 0 to 0.5
-  learning_rate: 0.0001 # Changed from 0.01 to 
+  dropout_ratio: 0.87  # Changed from 0 to 0.5
+  learning_rate: 0.001 # Changed from 0.01 to 0.0001
   l2_regularization: 0.0001 # 0.0001  # Changed from 0 to 0.0001
   batch_size: 256
   epochs: 1000  # Number of epochs to train - changed from 1000 to 100
@@ -58,7 +58,7 @@ training:
 
 testing:       # Restored Testing section
   test_model: False  # Use True/False, Set to True to run in test mode, False for training
-  model_path: ''  # Path to the trained model to load. e.g., models/model_2010-01-01_2019-12-31_f8_h32_b256_t20_best.pth
+  model_path: 'price_graph_best.pth' # <--- MUST HAVE A VALUE HERE
 
 vg_processing:
   datasets: [train, validation, test] # Datasets to process

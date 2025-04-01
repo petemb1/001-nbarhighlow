@@ -113,20 +113,20 @@ def stock_sample(df, d, T):
     #    df_window['high'], df_window['low'], df_window['close'],
     #    fastk_period=14, slowk_period=1, slowd_period=3
     #)  # STOCH with correct periods
-    #df_window.loc[:, 'bar_range'] = (df_window['high'] - df_window['low']) / df_window['close']
-    #df_window.loc[:, 'bar_shape'] = (df_window['close'] - df_window['open']) / (df_window['high'] - df_window['low']).replace(0, 0.0001) #or close - low
-    #df_window.loc[:, 'bar_close_mid'] = (df_window['close'] - (df_window['high'] + df_window['low']) / 2) / (df_window['high'] - df_window['low']).replace(0, 0.0001)
-    #df_window.loc[:, 'prev_high'] = df_window['high'].shift(1)
-    #df_window.loc[:, 'prev_low'] = df_window['low'].shift(1)
-    #df_window.loc[:, 'bar_overlap'] = (df_window[['high', 'prev_high']].min(axis=1) - df_window[['low', 'prev_low']].max(axis=1)) / (df_window['high'] - df_window['low']).replace(0, 0.0001)
+    df_window.loc[:, 'bar_range'] = (df_window['high'] - df_window['low']) / df_window['close']
+    df_window.loc[:, 'bar_shape'] = (df_window['close'] - df_window['open']) / (df_window['high'] - df_window['low']).replace(0, 0.0001) #or close - low
+    df_window.loc[:, 'bar_close_mid'] = (df_window['close'] - (df_window['high'] + df_window['low']) / 2) / (df_window['high'] - df_window['low']).replace(0, 0.0001)
+    df_window.loc[:, 'prev_high'] = df_window['high'].shift(1)
+    df_window.loc[:, 'prev_low'] = df_window['low'].shift(1)
+    df_window.loc[:, 'bar_overlap'] = (df_window[['high', 'prev_high']].min(axis=1) - df_window[['low', 'prev_low']].max(axis=1)) / (df_window['high'] - df_window['low']).replace(0, 0.0001)
     #df_window.loc[:, 'bar_close_ema9'] = df_window['close'] - talib.EMA(df_window['close'], timeperiod=9)
-    #df_window.drop(['prev_high', 'prev_low'], axis=1, inplace=True)  # Drop temp columns
+    df_window.drop(['prev_high', 'prev_low'], axis=1, inplace=True)  # Drop temp columns
 
     # --- Feature Engineering (within the window - MIRROR load_and_split_data) ---
-    past_windows = config['data']['log_slope_past_windows']
-    for n in past_windows:
+    #past_windows = config['data']['log_slope_past_windows']
+    #for n in past_windows:
         # Apply rolling calculation within the window
-        df_window[f'slope_{n}'] = df_window['close'].rolling(window=n, min_periods=n).apply(calculate_log_linear_slope, raw=True)
+    #    df_window[f'slope_{n}'] = df_window['close'].rolling(window=n, min_periods=n).apply(calculate_log_linear_slope, raw=True)
 
     # --- Fill NaN values with 0 instead of dropping ---
     df_window.fillna(0, inplace=True)  # Fill NaNs introduced by feature engineering with 0.
@@ -190,11 +190,11 @@ def load_and_split_data(config):
             ticker = file_[:-4].lower()
 
             # --- Feature Engineering: Calculate NEW Slope Features ---
-            past_windows = config['data']['log_slope_past_windows']
-            for n in past_windows:
+            #past_windows = config['data']['log_slope_past_windows']
+            #for n in past_windows:
                 # Apply the slope calculation on a rolling window of size n
                 # min_periods=n ensures we only calculate when we have a full window
-                df[f'slope_{n}'] = df['close'].rolling(window=n, min_periods=n).apply(calculate_log_linear_slope, raw=True) # raw=True passes NumPy array
+            #    df[f'slope_{n}'] = df['close'].rolling(window=n, min_periods=n).apply(calculate_log_linear_slope, raw=True) # raw=True passes NumPy array
 
             # --- Feature Engineering: Add back in here. ---
             #df.loc[:, 'rsi'] = talib.RSI(df['close'], timeperiod=14)
@@ -202,14 +202,14 @@ def load_and_split_data(config):
             #    df['high'], df['low'], df['close'],
             #    fastk_period=14, slowk_period=1, slowd_period=3
             #)
-            #df.loc[:, 'bar_range'] = (df['high'] - df['low']) / df['close']
-            #df.loc[:, 'bar_shape'] = (df['close'] - df['open']) / (df['high'] - df['low']).replace(0, 0.0001)
-            #df.loc[:, 'bar_close_mid'] = (df['close'] - (df['high'] + df['low']) / 2) / (df['high'] - df['low']).replace(0, 0.0001)
-            #df.loc[:, 'prev_high'] = df['high'].shift(1)
-            #df.loc[:, 'prev_low'] = df['low'].shift(1)
-            #df.loc[:, 'bar_overlap'] = (df[['high', 'prev_high']].min(axis=1) - df[['low', 'prev_low']].max(axis=1)) / (df['high'] - df['low']).replace(0, 0.0001)
+            df.loc[:, 'bar_range'] = (df['high'] - df['low']) / df['close']
+            df.loc[:, 'bar_shape'] = (df['close'] - df['open']) / (df['high'] - df['low']).replace(0, 0.0001)
+            df.loc[:, 'bar_close_mid'] = (df['close'] - (df['high'] + df['low']) / 2) / (df['high'] - df['low']).replace(0, 0.0001)
+            df.loc[:, 'prev_high'] = df['high'].shift(1)
+            df.loc[:, 'prev_low'] = df['low'].shift(1)
+            df.loc[:, 'bar_overlap'] = (df[['high', 'prev_high']].min(axis=1) - df[['low', 'prev_low']].max(axis=1)) / (df['high'] - df['low']).replace(0, 0.0001)
             #df.loc[:, 'bar_close_ema9'] = df['close'] - talib.EMA(df['close'], timeperiod=9)
-            #df.drop(['prev_high', 'prev_low'], axis=1, inplace=True)
+            df.drop(['prev_high', 'prev_low'], axis=1, inplace=True)
 
             # --- Fill NaN values with 0 instead of dropping ---
             print(f"DataFrame size BEFORE fillna (feature engineering): {df.shape}")  # Debug print
@@ -246,35 +246,60 @@ def load_and_split_data(config):
 
     return train_df, validation_df, test_df
 
-def calculate_target(df, n_future, close_col): # Renamed arg for clarity
+# --- dataset.py ---
+import pandas as pd
+import numpy as np
+# (Keep other imports and config loading)
+
+def calculate_target(df, prediction_window, close_col): # close_col not needed here
     """
-    Calculates the target: 1 if future slope > 0, 0 otherwise.
-    Uses log-linear regression on future 'close' prices.
+    Calculates the target state based on a symmetric n-bar high/low.
+    0: Go Short (at symmetric n-bar high)
+    1: Stay Short (following Go Short)
+    2: Go Long (at symmetric n-bar low)
+    3: Stay Long (following Go Long)
+
+    Uses a window of [t-n, t+n] to determine the state for time t.
+    WARNING: This target inherently uses future information (up to t+n).
+             Shift target appropriately before using for prediction training.
     """
-    # Ensure window sizes are non-negative
-    if n_future <= 0:
-         raise ValueError("n_future must be positive")
+    n = prediction_window
+    if n <= 0:
+        raise ValueError("prediction_window (n) must be positive for symmetric high/low")
 
-    target = pd.Series(0, index=df.index, dtype='int8') # Initialize to 0 (down/neutral)
+    # Calculate rolling max/min over the symmetric window (2n+1 points, centered)
+    # min_periods ensures we only calculate for full windows
+    rolling_high = df['high'].rolling(window=2*n+1, center=True, min_periods=2*n+1).max()
+    rolling_low = df['low'].rolling(window=2*n+1, center=True, min_periods=2*n+1).min()
 
-    close_prices = df[close_col].values # Faster access
+    # Identify local turning points
+    is_local_high = df['high'] >= rolling_high # True if current high is the max in [t-n, t+n]
+    is_local_low = df['low'] <= rolling_low   # True if current low is the min in [t-n, t+n]
 
-    # Calculate slopes using a rolling window looking *forward*
-    # We calculate the slope for window [i to i+n_future] and assign it to target[i]
-    for i in range(len(df) - n_future):
-        # Window includes current bar 'i' up to 'i+n_future-1'
-        # But the regression should look from 'i' to 'i+n_future'
-        future_window_close = close_prices[i : i + n_future + 1] # Correct window slicing for future
+    # Initialize target series with NaN
+    target = pd.Series(np.nan, index=df.index, dtype='float64') # Start with float for NaN
 
-        if len(future_window_close) != n_future + 1: # Ensure full window
-             continue
+    # Assign turning points (Go Short takes priority if high and low occur same day)
+    target.loc[is_local_low] = 2.0  # Go Long
+    target.loc[is_local_high] = 0.0 # Go Short (overwrites Go Long if both true)
 
-        slope = calculate_log_linear_slope(future_window_close)
+    # Forward fill the state from the last turning point
+    target = target.ffill()
 
-        if slope is not np.nan and slope > 0:
-            target.iloc[i] = 1 # Set to 1 only if slope is positive and valid
-    # Points at the end where a future window can't be formed remain 0.
-    return target
+    # --- Adjust filled values to "Stay" states ---
+    # Identify where the target was originally NaN *before* ffill.
+    # We need to check the *original* signals, not just the filled target value.
+    # A bar is "Stay Long" if the ffill resulted in 2, but it wasn't originally a local low.
+    target.loc[(target == 2.0) & (~is_local_low)] = 3.0 # Stay Long
+    # A bar is "Stay Short" if the ffill resulted in 0, but it wasn't originally a local high.
+    target.loc[(target == 0.0) & (~is_local_high)] = 1.0 # Stay Short
+    # ------------------------------------------
+
+    # Handle initial NaNs (before the first signal) - Default to Stay Short (1)
+    # This is an assumption - you might choose another default (e.g., based on first signal)
+    target.fillna(1, inplace=True)
+
+    return target.astype('int8') # Convert to final integer type
 
 def sample_by_dates(df, T):
     dates = df.index.tolist()
